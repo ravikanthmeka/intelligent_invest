@@ -1,0 +1,278 @@
+import os
+import sys
+import yaml
+import json
+import asyncio
+import logging
+from datetime import datetime
+from typing import Dict, Any
+from dotenv import load_dotenv
+from src.llm import LLMClient
+from src.broker import BrokerAgent
+from src.agents.specialized import (
+    MarketScannerAgent,
+    TechnicalAgent,
+    FundamentalAgent,
+    NewsAgent,
+    RiskAgent,
+    PortfolioManagerAgent
+)
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler("trading_system.log")
+    ]
+)
+logger = logging.getLogger("TradingSystemMain")
+
+STATE_FILE = "trading_state.json"
+
+def load_state() -> Dict[str, Any]:
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error reading state file: {e}")
+    return {"active_trades": {}}
+
+def save_state(state: Dict[str, Any]):
+    try:
+        with open(STATE_FILE, "w") as f:
+            json.dump(state, f, indent=4)
+    except Exception as e:
+        logger.error(f"Error writing state file: {e}")
+
+async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
+    logger.info("=== Starting Trading Cycle ===")
+    
+    # 1. Initialize LLM Client and Agents
+    llm = LLMClient(
+        provider=config.get("llm", {}).get("provider"),
+        model=config.get("llm", {}).get("model")
+    )
+    
+    scanner = MarketScannerAgent(tickers=config.get("watchlist", []))
+    tech_agent = TechnicalAgent(llm=llm)
+    fund_agent = FundamentalAgent(llm=llm)
+    news_agent = NewsAgent(llm=llm)
+    risk_agent = RiskAgent(
+        max_positions=config.get("risk", {}).get("max_positions", 5),
+        max_cap_pct=config.get("risk", {}).get("max_capital_pct", 0.20),
+        risk_pct=config.get("risk", {}).get("risk_per_trade_pct", 0.01)
+    )
+    
+    pm = PortfolioManagerAgent(
+        llm=llm,
+        scanner=scanner,
+        technical=tech_agent,
+        fundamental=fund_agent,
+        news=news_agent,
+        risk=risk_agent
+    )
+
+    # 2. Connect to Broker
+    broker = BrokerAgent(
+        host=config.get("broker", {}).get("host", "127.0.0.1"),
+        port=config.get("broker", {}).get("port", 4002),
+        client_id=config.get("broker", {}).get("client_id", 1),
+        dry_run=dry_run
+    )
+    
+    connected = await broker.connect()
+    if not connected:
+        logger.error("Failed to connect to Broker. Aborting cycle.")
+        return
+
+    try:
+        # Load local trade tracking state
+        state = load_state()
+        active_trades = state.get("active_trades", {})
+
+        # 3. Get current portfolio details
+        portfolio = await broker.get_portfolio_value()
+        net_liq = portfolio["net_liquidation"]
+        cash = portfolio["cash"]
+        logger.info(f"Portfolio Net Liquidation: ${net_liq:,.2f} | Cash: ${cash:,.2f}")
+
+        # Fetch actual broker positions
+        broker_positions = await broker.get_positions()
+        logger.info(f"Found {len(broker_positions)} active positions in broker account.")
+
+        # Sync local state with actual broker positions (remove closed trades)
+        broker_symbols = {pos["symbol"] for pos in broker_positions}
+        for symbol in list(active_trades.keys()):
+            if symbol not in broker_symbols:
+                logger.info(f"Removing {symbol} from tracking state (no longer active in broker portfolio).")
+                del active_trades[symbol]
+
+        # 4. Evaluate existing positions (Trailing Stops / Profit Targets)
+        for pos in broker_positions:
+            symbol = pos["symbol"]
+            current_price = pos["market_price"]
+            avg_cost = pos["average_cost"]
+            shares = pos["shares"]
+            unrealized_pnl = pos["unrealized_pnl"]
+            return_pct = pos["unrealized_pnl_pct"]
+
+            logger.info(f"Evaluating {symbol}: {shares} shares | Avg Cost: ${avg_cost:.2f} | Current: ${current_price:.2f} | Return: {return_pct*100:.2f}%")
+
+            # Determine entry price and active stop loss from local state or fallback
+            trade_info = active_trades.get(symbol, {})
+            entry_price = trade_info.get("entry_price", avg_cost)
+            current_stop = trade_info.get("stop_loss_price", avg_cost * 0.94)  # Default 6% stop loss fallback
+
+            # Fetch ATR for trailing calculations
+            ticker_obj = yf.Ticker(symbol)
+            hist = ticker_obj.history(period="1mo")
+            atr = 1.0  # Fallback
+            if len(hist) >= 14:
+                from src.skills.market_data import CalculateIndicatorsSkill
+                hist = CalculateIndicatorsSkill().execute(hist)
+                atr = hist['ATR'].iloc[-1]
+
+            # Check if profit threshold reached to evaluate winner momentum
+            momentum_is_strong = False
+            if return_pct >= 0.03: # 3% return threshold
+                logger.info(f"{symbol} has gained {return_pct*100:.1f}%. Checking momentum...")
+                momentum_is_strong = pm.evaluate_winner_momentum(symbol, current_price, atr)
+                logger.info(f"Momentum evaluation result for {symbol}: {'STRONG' if momentum_is_strong else 'WEAK'}")
+
+            # Risk assessment for existing trade
+            decision = risk_agent.evaluate_active_position(
+                symbol=symbol,
+                entry_price=entry_price,
+                current_price=current_price,
+                current_stop=current_stop,
+                atr=atr,
+                momentum_is_strong=momentum_is_strong
+            )
+
+            action = decision["action"]
+            logger.info(f"Risk Agent action for {symbol}: {action} | {decision['rationale']}")
+
+            if action == "SELL":
+                logger.info(f"Liquidating position in {symbol}...")
+                success = await broker.execute_sell_all(symbol)
+                if success and symbol in active_trades:
+                    del active_trades[symbol]
+            elif action == "HOLD_RAISE_STOP":
+                new_stop = decision["new_stop"]
+                if new_stop > current_stop:
+                    logger.info(f"Raising stop loss for {symbol} to ${new_stop:.2f}")
+                    success = await broker.update_stop_loss(symbol, new_stop)
+                    if success:
+                        active_trades[symbol]["stop_loss_price"] = new_stop
+                        active_trades[symbol]["updated_at"] = datetime.now().isoformat()
+
+        # Save state after adjustments
+        state["active_trades"] = active_trades
+        save_state(state)
+
+        # 5. Scan for new entries if we have empty slots
+        active_positions_count = len(active_trades)
+        max_positions = config.get("risk", {}).get("max_positions", 5)
+        
+        if active_positions_count >= max_positions:
+            logger.info(f"Portfolio is at max position limit ({active_positions_count}/{max_positions}). Skipping scanner.")
+        else:
+            slots_available = max_positions - active_positions_count
+            logger.info(f"Scanning for candidates to fill {slots_available} available slots...")
+            
+            candidates = scanner.scan()
+            
+            for cand in candidates:
+                symbol = cand["symbol"]
+                if symbol in active_trades:
+                    continue  # Already in portfolio
+                
+                if slots_available <= 0:
+                    break
+                
+                logger.info(f"Evaluating candidate {symbol}...")
+
+                # A. Earnings Shield Check
+                passed_shield, reason = news_agent.check_earnings_shield(symbol)
+                if not passed_shield:
+                    logger.info(f"Skipping {symbol}: Earnings shield active ({reason})")
+                    continue
+
+                # B. News Sentiment Check
+                news_analysis = news_agent.analyze_news(symbol)
+                logger.info(f"News Verdict for {symbol}: {news_analysis['verdict']} | Score: {news_analysis['sentiment_score']}/10")
+                if news_analysis["verdict"] == "NEGATIVE":
+                    logger.info(f"Skipping {symbol}: Negative news sentiment.")
+                    continue
+
+                # C. Technical Analysis Check
+                tech_analysis = tech_agent.analyze(symbol, cand)
+                logger.info(f"Technical Verdict for {symbol}: {tech_analysis['verdict']} | Score: {tech_analysis['score']}/10")
+                if tech_analysis["verdict"] != "BULLISH":
+                    logger.info(f"Skipping {symbol}: Technical setup not bullish.")
+                    continue
+
+                # D. Fundamental Analysis Check
+                fund_analysis = fund_agent.analyze(symbol)
+                logger.info(f"Fundamental Verdict for {symbol}: {fund_analysis['verdict']} | Score: {fund_analysis['score']}/10")
+                if fund_analysis["verdict"] == "UNFAVORABLE":
+                    logger.info(f"Skipping {symbol}: Unfavorable fundamentals.")
+                    continue
+
+                # E. Position Sizing & Entry Execution
+                sizing = risk_agent.calculate_position_size(
+                    portfolio_value=net_liq,
+                    entry_price=cand["close"],
+                    atr=cand["atr"]
+                )
+
+                qty = sizing["quantity"]
+                if qty <= 0:
+                    logger.warning(f"Sizing calculation returned quantity 0 for {symbol}. Skipping.")
+                    continue
+
+                logger.info(f"Candidate {symbol} passed all filters. Buying {qty} shares (Capital Required: ${sizing['capital_required']:.2f}, Stop Loss: ${sizing['stop_loss_price']:.2f})")
+
+                # Execute Bracket Buy Order
+                order_id = await broker.execute_buy(symbol, qty, sizing["stop_loss_price"])
+                if order_id:
+                    active_trades[symbol] = {
+                        "entry_price": cand["close"],
+                        "stop_loss_price": sizing["stop_loss_price"],
+                        "quantity": qty,
+                        "initial_capital": sizing["capital_required"],
+                        "purchased_at": datetime.now().isoformat(),
+                        "order_id": order_id
+                    }
+                    slots_available -= 1
+
+            # Save state after scans and executions
+            state["active_trades"] = active_trades
+            save_state(state)
+
+    except Exception as e:
+        logger.error(f"Error in trading cycle execution: {e}", exc_info=True)
+    finally:
+        await broker.disconnect()
+        logger.info("=== Trading Cycle Complete ===")
+
+if __name__ == "__main__":
+    # Load environment variables
+    load_dotenv()
+    
+    # Read config
+    config_path = "config.yaml"
+    if not os.path.exists(config_path):
+        logger.error("config.yaml not found. Please create one.")
+        sys.exit(1)
+        
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+        
+    dry_run = config.get("trading", {}).get("dry_run", True)
+    
+    # Run the cycle once (intended for execution via cron or systemd timer)
+    asyncio.run(run_trading_cycle(config, dry_run))

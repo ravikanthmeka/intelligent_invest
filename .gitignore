@@ -1,0 +1,39 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments & dependencies
+.venv/
+venv/
+ENV/
+env/
+*.bak
+*.pyc
+
+# Local configurations and secrets
+.env
+.env.*
+!*.example
+ssm_dashboard_params.json
+ssm_vnc_params.json
+out.json
+
+# Terraform outputs and lockfiles
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+
+# Trading system logs and runtime state
+trading_system.log
+trading_state.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test and IDE configuration
+.pytest_cache/
+.vscode/
+.idea/

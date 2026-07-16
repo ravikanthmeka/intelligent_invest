@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  ib-gateway:
+    image: gnzsnz/ib-gateway:latest
+    container_name: ib-gateway
+    restart: always
+    ports:
+      - "4002:4002"  # Paper Trading API port
+      - "4001:4001"  # Live Trading API port
+      - "5900:5900"  # VNC port (for viewing the GUI if needed)
+    environment:
+      - TWS_USERID=${IBKR_USERID:-edemo}
+      - TWS_PASSWORD=${IBKR_PASSWORD:-demouser}
+      - TRADING_MODE=${IBKR_TRADING_MODE:-paper}
+      - API_PORT=4002
+      - READ_ONLY_API=no
+      - VNC_PASSWORD=${IBKR_VNC_PASSWORD:-secretvnc}

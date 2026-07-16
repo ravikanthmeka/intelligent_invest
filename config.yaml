@@ -1,0 +1,40 @@
+# Multi-Agent Trading System Configuration
+
+trading:
+  dry_run: true  # If true, queries LLMs and scans, but does not place real orders. Set to false to execute paper/live trades.
+
+llm:
+  provider: "bedrock"  # Options: "bedrock" or "openai"
+  model: "google.gemma-3-12b-it"  # Supported Bedrock model IDs, or OpenAI models like "gpt-4o"
+
+broker:
+  host: "127.0.0.1"
+  port: 4002  # 4002 is paper trading port in IB Gateway, 4001 is live
+  client_id: 88
+
+risk:
+  max_positions: 5
+  max_capital_pct: 0.20  # Max 20% of capital in a single stock
+  risk_per_trade_pct: 0.01  # Risk 1% of portfolio on any one trade
+
+watchlist:
+  - "AAPL"
+  - "MSFT"
+  - "NVDA"
+  - "AMZN"
+  - "GOOG"
+  - "TSLA"
+  - "META"
+  - "AMD"
+  - "NFLX"
+  - "AVGO"
+  - "COST"
+  - "QCOM"
+  - "INTC"
+  - "MU"
+  - "MRVL"
+  - "PYPL"
+  - "ADBE"
+  - "NFLX"
+  - "ORCL"
+  - "CSCO"
