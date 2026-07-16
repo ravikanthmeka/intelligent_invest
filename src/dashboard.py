@@ -96,17 +96,23 @@ def update_systemd_timer(interval_minutes: int):
     if platform.system() != "Linux":
         return
         
-    on_calendar = "Mon-Fri *-*-* 09,10,11,12,13,14,15:00,30:00"
     if interval_minutes == 15:
-        on_calendar = "Mon-Fri *-*-* 09,10,11,12,13,14,15:00,15,30,45:00"
+        on_calendar_lines = """OnCalendar=Mon-Fri *-*-* 09:30,45:00 America/New_York
+OnCalendar=Mon-Fri *-*-* 10,11,12,13,14,15:00,15,30,45:00 America/New_York
+OnCalendar=Mon-Fri *-*-* 16:00:00 America/New_York"""
     elif interval_minutes == 60:
-        on_calendar = "Mon-Fri *-*-* 09,10,11,12,13,14,15:00:00"
+        on_calendar_lines = """OnCalendar=Mon-Fri *-*-* 09:30:00 America/New_York
+OnCalendar=Mon-Fri *-*-* 10,11,12,13,14,15,16:00:00 America/New_York"""
+    else:  # default 30
+        on_calendar_lines = """OnCalendar=Mon-Fri *-*-* 09:30:00 America/New_York
+OnCalendar=Mon-Fri *-*-* 10,11,12,13,14,15:00,30:00 America/New_York
+OnCalendar=Mon-Fri *-*-* 16:00:00 America/New_York"""
         
     timer_content = f"""[Unit]
 Description=Run Intelligent Invest Trading Cycle every {interval_minutes} minutes during trading hours
 
 [Timer]
-OnCalendar={on_calendar}
+{on_calendar_lines}
 Unit=trading-agent.service
 
 [Install]
