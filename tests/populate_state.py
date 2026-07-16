@@ -60,6 +60,53 @@ data = {
                 "news_score": 5.5
             }
         }
+    ],
+    "candidate_evaluations": [
+        {
+            "symbol": "CRWD",
+            "risk_tier": "high",
+            "timestamp": "2026-07-16T16:24:10.000000",
+            "status": "Skipped: Fundamental Strength (UNFAVORABLE, Score: 3.5)",
+            "analysis": {
+                "earnings_checked": "PASSED",
+                "news_score": 6.0,
+                "news_verdict": "NEUTRAL",
+                "tech_score": 7.8,
+                "tech_verdict": "BULLISH",
+                "fund_score": 3.5,
+                "fund_verdict": "UNFAVORABLE"
+            }
+        },
+        {
+            "symbol": "UNH",
+            "risk_tier": "moderate",
+            "timestamp": "2026-07-16T16:24:41.000000",
+            "status": "Skipped: Earnings Shield (Upcoming earnings on 2026-07-16 (0 days away))",
+            "analysis": {
+                "earnings_checked": "TRIGGERED",
+                "news_score": None,
+                "news_verdict": None,
+                "tech_score": None,
+                "tech_verdict": None,
+                "fund_score": None,
+                "fund_verdict": None
+            }
+        },
+        {
+            "symbol": "KO",
+            "risk_tier": "low",
+            "timestamp": "2026-07-16T16:24:52.000000",
+            "status": "Purchased",
+            "analysis": {
+                "earnings_checked": "PASSED",
+                "news_score": 8.0,
+                "news_verdict": "POSITIVE",
+                "tech_score": 8.5,
+                "tech_verdict": "BULLISH",
+                "fund_score": 7.5,
+                "fund_verdict": "FAVORABLE"
+            }
+        }
     ]
 }
 
