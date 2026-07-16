@@ -9,7 +9,7 @@ if __name__ == "__main__":
     ib = IB()
     try:
         print("Connecting with clientId=88...")
-        ib.connect('127.0.0.1', 4001, clientId=88)
+        ib.connect('127.0.0.1', 4001, clientId=88, timeout=20)
         print("Connected successfully!")
         print(f"Managed Accounts: {ib.managedAccounts()}")
         
