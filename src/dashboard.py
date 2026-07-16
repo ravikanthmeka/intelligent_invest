@@ -28,6 +28,70 @@ def save_config(new_config):
         st.error(f"Error saving config file: {e}")
         return False
 
+ENV_FILE = ".env"
+
+def load_env_vars():
+    vars = {}
+    if os.path.exists(ENV_FILE):
+        try:
+            with open(ENV_FILE, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        parts = line.split("=", 1)
+                        if len(parts) == 2:
+                            k, v = parts
+                            vars[k.strip()] = v.strip().strip('"').strip("'")
+        except Exception:
+            pass
+    return vars
+
+def save_env_vars(userid, password, trading_mode):
+    try:
+        lines = []
+        if os.path.exists(ENV_FILE):
+            with open(ENV_FILE, "r") as f:
+                lines = f.readlines()
+        
+        new_lines = []
+        keys_updated = set()
+        for line in lines:
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#") and "=" in line:
+                parts = stripped.split("=", 1)
+                if len(parts) == 2:
+                    k, _ = parts
+                    k = k.strip()
+                    if k == "IBKR_USERID":
+                        new_lines.append(f'IBKR_USERID="{userid}"\n')
+                        keys_updated.add("IBKR_USERID")
+                    elif k == "IBKR_PASSWORD":
+                        new_lines.append(f'IBKR_PASSWORD="{password}"\n')
+                        keys_updated.add("IBKR_PASSWORD")
+                    elif k == "IBKR_TRADING_MODE":
+                        new_lines.append(f'IBKR_TRADING_MODE="{trading_mode}"\n')
+                        keys_updated.add("IBKR_TRADING_MODE")
+                    else:
+                        new_lines.append(line)
+                else:
+                    new_lines.append(line)
+            else:
+                new_lines.append(line)
+        
+        if "IBKR_USERID" not in keys_updated:
+            new_lines.append(f'IBKR_USERID="{userid}"\n')
+        if "IBKR_PASSWORD" not in keys_updated:
+            new_lines.append(f'IBKR_PASSWORD="{password}"\n')
+        if "IBKR_TRADING_MODE" not in keys_updated:
+            new_lines.append(f'IBKR_TRADING_MODE="{trading_mode}"\n')
+            
+        with open(ENV_FILE, "w") as f:
+            f.writelines(new_lines)
+        return True
+    except Exception as e:
+        st.error(f"Error saving .env file: {e}")
+        return False
+
 def update_systemd_timer(interval_minutes: int):
     if platform.system() != "Linux":
         return
@@ -345,6 +409,15 @@ with tab3:
                                                    value=int(cfg.get("broker", {}).get("client_id", 88)),
                                                    help="Unique client connection ID for IB Gateway API.")
             
+            env_vars = load_env_vars()
+            col_cred1, col_cred2 = st.columns(2)
+            with col_cred1:
+                broker_username = st.text_input("IBKR Username / User ID", value=env_vars.get("IBKR_USERID", ""),
+                                                help="Username for your Interactive Brokers paper or live account.")
+            with col_cred2:
+                broker_password = st.text_input("IBKR Password", type="password", value=env_vars.get("IBKR_PASSWORD", ""),
+                                                help="Password for your Interactive Brokers paper or live account.")
+            
             st.write("#### Risk & Sizing Rules")
             col_risk1, col_risk2 = st.columns(2)
             with col_risk1:
@@ -422,10 +495,28 @@ with tab3:
                     cfg["watchlist"] = watchlist_list
                     
                     if save_config(cfg):
-                        # Update systemd timer on EC2 host if running on Linux
-                        update_systemd_timer(interval_minutes)
-                        st.success("Configuration saved successfully! The next trading cycle will use these settings.")
-                        st.rerun()
+                        # Save environment variables and check for docker restart
+                        trading_mode = "live" if broker_port == 4001 else "paper"
+                        credentials_changed = (
+                            broker_username != env_vars.get("IBKR_USERID") or
+                            broker_password != env_vars.get("IBKR_PASSWORD") or
+                            trading_mode != env_vars.get("IBKR_TRADING_MODE")
+                        )
+                        
+                        if save_env_vars(broker_username, broker_password, trading_mode):
+                            if credentials_changed:
+                                try:
+                                    # Restart docker container
+                                    subprocess.run(["docker", "compose", "-f", "docker-compose.ib.yaml", "down"], check=False)
+                                    subprocess.run(["docker", "compose", "-f", "docker-compose.ib.yaml", "up", "-d"], check=False)
+                                    st.info("Credentials or mode changed. IB Gateway container restarted. Please check MFA on your mobile device.")
+                                except Exception as e:
+                                    st.error(f"Failed to restart IB Gateway container: {e}")
+
+                            # Update systemd timer on EC2 host if running on Linux
+                            update_systemd_timer(interval_minutes)
+                            st.success("Configuration saved successfully! The next trading cycle will use these settings.")
+                            st.rerun()
 
 # Auto Refresh UI Checkbox
 st.sidebar.write("### Refresh Controls")
