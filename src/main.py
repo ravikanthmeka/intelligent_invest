@@ -139,6 +139,9 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
         net_liq = portfolio["net_liquidation"]
         cash = portfolio["cash"]
         logger.info(f"Portfolio Net Liquidation: ${net_liq:,.2f} | Cash: ${cash:,.2f}")
+        
+        state["net_liquidation"] = net_liq
+        state["cash"] = cash
 
         # Fetch actual broker positions
         broker_positions = await broker.get_positions()

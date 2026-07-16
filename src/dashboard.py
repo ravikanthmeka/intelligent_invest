@@ -239,6 +239,8 @@ st.subheader("Multi-Agent Quantitative Trading System Dashboard")
 # Fetch state
 state = load_trading_state()
 active_trades = state.get("active_trades", {})
+net_liq = state.get("net_liquidation", 100000.0)
+cash = state.get("cash", 100000.0)
 
 # Calculate KPIs
 total_allocated = 0.0
@@ -311,8 +313,8 @@ with col2:
 with col3:
     st.markdown(f"""
     <div class="kpi-card">
-        <div class="kpi-title">Current Portfolio Value</div>
-        <div class="kpi-val">${total_market_value:,.2f}</div>
+        <div class="kpi-title">Portfolio Net Liquidation</div>
+        <div class="kpi-val">${net_liq:,.2f}</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -337,7 +339,7 @@ high_target_pct = alloc_pcts.get("high_risk_pct", 0.30)
 mod_target_pct = alloc_pcts.get("moderate_risk_pct", 0.40)
 low_target_pct = alloc_pcts.get("low_risk_pct", 0.30)
 
-portfolio_total = 100000.0  # Dry-run baseline
+portfolio_total = net_liq
 high_target_cap = portfolio_total * high_target_pct
 mod_target_cap = portfolio_total * mod_target_pct
 low_target_cap = portfolio_total * low_target_pct
@@ -626,6 +628,10 @@ with tab4:
                             update_systemd_timer(interval_minutes)
                             st.success("Configuration saved successfully! The next trading cycle will use these settings.")
                             st.rerun()
+
+st.sidebar.write("### Account Summary")
+st.sidebar.metric("Net Liquidation", f"${net_liq:,.2f}")
+st.sidebar.metric("Available Cash", f"${cash:,.2f}")
 
 # Auto Refresh UI Checkbox
 st.sidebar.write("### Refresh Controls")
