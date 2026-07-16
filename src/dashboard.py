@@ -7,6 +7,8 @@ import yaml
 import subprocess
 import platform
 from datetime import datetime
+from typing import Dict, Any
+
 
 CONFIG_FILE = "config.yaml"
 
