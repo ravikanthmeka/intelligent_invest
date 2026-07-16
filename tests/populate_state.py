@@ -1,6 +1,8 @@
 import json
 
 data = {
+    "net_liquidation": 1000.0,
+    "cash": 1000.0,
     "active_trades": {
         "XOM": {
             "entry_price": 146.4600067138672,
