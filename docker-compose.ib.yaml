@@ -6,8 +6,8 @@ services:
     container_name: ib-gateway
     restart: always
     ports:
-      - "4002:4002"  # Paper Trading API port
-      - "4001:4001"  # Live Trading API port
+      - "4002:4004"  # Paper Trading API port (via socat)
+      - "4001:4003"  # Live Trading API port (via socat)
       - "5900:5900"  # VNC port (for viewing the GUI if needed)
     environment:
       - TWS_USERID=${IBKR_USERID:-edemo}
