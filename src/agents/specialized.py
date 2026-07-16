@@ -132,9 +132,9 @@ class NewsAgent(Agent):
         self.register_skill(FetchRecentNewsSkill())
         self.register_skill(NewsSentimentSkill(llm))
 
-    def check_earnings_shield(self, symbol: str) -> Tuple[bool, Optional[str]]:
+    def check_earnings_shield(self, symbol: str, days_range: int = 3) -> Tuple[bool, Optional[str]]:
         shield_skill = self.get_skill("FetchEarningsCalendar")
-        return shield_skill.execute(symbol)
+        return shield_skill.execute(symbol, days_range=days_range)
 
     def analyze_news(self, symbol: str, learnings_feedback: str = "") -> Dict[str, Any]:
         fetch_news_skill = self.get_skill("FetchRecentNews")

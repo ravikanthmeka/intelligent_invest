@@ -50,7 +50,7 @@ class FetchEarningsCalendarSkill(Skill):
             description="Checks if an earnings report is scheduled within +/- 3 days for a given stock symbol."
         )
 
-    def execute(self, symbol: str) -> Tuple[bool, Optional[str]]:
+    def execute(self, symbol: str, days_range: int = 3) -> Tuple[bool, Optional[str]]:
         try:
             ticker_obj = yf.Ticker(symbol)
             calendar = ticker_obj.calendar
@@ -73,7 +73,7 @@ class FetchEarningsCalendarSkill(Skill):
             today = datetime.now().date()
             days_diff = (next_earnings - today).days
 
-            if -3 <= days_diff <= 3:
+            if -days_range <= days_diff <= days_range:
                 reason = f"Upcoming earnings on {next_earnings.strftime('%Y-%m-%d')} ({days_diff} days away)"
                 return False, reason
             

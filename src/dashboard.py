@@ -395,7 +395,7 @@ def compile_learnings_feedback(state: Dict[str, Any]) -> str:
     return feedback
 
 # Layout: Main Body
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Active Positions", "📜 Trade Log & AI Learnings", "📜 System Logs", "⚙️ Settings & Risk Rules"])
+tab1, tab2, tab_candidates, tab3, tab4 = st.tabs(["📊 Active Positions", "📜 Trade Log & AI Learnings", "🔍 Candidate Analysis Log", "📁 System Logs", "⚙️ Settings & Risk Rules"])
 
 with tab1:
     st.write("### Portfolio Breakdown")
@@ -451,6 +451,35 @@ with tab2:
         st.dataframe(pd.DataFrame(completed_list), use_container_width=True)
     else:
         st.info("No completed trades history yet.")
+
+with tab_candidates:
+    st.write("### Ticker Scanning & Qualification Log")
+    st.markdown("This log records every candidate asset evaluated by the analysis agents during watchlist scans, showing individual agent scores and the qualification outcome.")
+    
+    candidate_evals = state.get("candidate_evaluations", [])
+    
+    if len(candidate_evals) == 0:
+        st.info("No candidates evaluated yet. Run a trading cycle to generate analysis data.")
+    else:
+        # Build pandas DataFrame for display
+        rows = []
+        for item in candidate_evals:
+            analysis = item.get("analysis", {})
+            rows.append({
+                "Timestamp": item.get("timestamp", "").split("T")[0] + " " + item.get("timestamp", "").split("T")[1][:8] if "T" in item.get("timestamp", "") else item.get("timestamp", ""),
+                "Ticker": item.get("symbol"),
+                "Risk Tier": item.get("risk_tier", "moderate").upper(),
+                "Earnings Check": "Passed" if analysis.get("earnings_checked") == "PASSED" else "Triggered Shield",
+                "News Score": f"{analysis.get('news_score')}/10" if analysis.get('news_score') is not None else "-",
+                "News Verdict": analysis.get("news_verdict") if analysis.get("news_verdict") is not None else "-",
+                "Tech Score": f"{analysis.get('tech_score')}/10" if analysis.get('tech_score') is not None else "-",
+                "Tech Verdict": analysis.get("tech_verdict") if analysis.get("tech_verdict") is not None else "-",
+                "Fund Score": f"{analysis.get('fund_score')}/10" if analysis.get('fund_score') is not None else "-",
+                "Fund Verdict": analysis.get("fund_verdict") if analysis.get("fund_verdict") is not None else "-",
+                "Status": item.get("status")
+            })
+        df_evals = pd.DataFrame(rows)
+        st.dataframe(df_evals, use_container_width=True)
 
 with tab3:
     st.write("### Latest Agent Execution Logs")
@@ -533,6 +562,24 @@ with tab4:
             if total_alloc_sum != 100:
                 st.warning(f"⚠️ Allocations currently sum to **{total_alloc_sum}%**. They MUST sum to exactly 100% to save.")
 
+            st.write("#### Analysis Agent Skip Thresholds")
+            rules_section = cfg.get("rules", {})
+            col_th1, col_th2 = st.columns(2)
+            with col_th1:
+                min_fundamental_score = st.slider("Minimum Fundamental Score (0-10)", min_value=1.0, max_value=10.0, step=0.5,
+                                                  value=float(rules_section.get("min_fundamental_score", 5.0)),
+                                                  help="Skip candidates with a fundamental rating below this value.")
+                min_technical_score = st.slider("Minimum Technical Score (0-10)", min_value=1.0, max_value=10.0, step=0.5,
+                                                value=float(rules_section.get("min_technical_score", 7.0)),
+                                                help="Skip candidates with a technical rating below this value.")
+            with col_th2:
+                min_news_score = st.slider("Minimum News Sentiment Score (0-10)", min_value=1.0, max_value=10.0, step=0.5,
+                                           value=float(rules_section.get("min_news_score", 5.0)),
+                                           help="Skip candidates with news sentiment score below this value.")
+                earnings_shield_days = st.slider("Earnings Shield Window (Days)", min_value=1, max_value=10, step=1,
+                                                 value=int(rules_section.get("earnings_shield_days", 3)),
+                                                 help="Skip candidates if earnings date is within +/- N days.")
+
             st.write("#### Risk Tier Specifications")
             tier_rules = cfg.get("tier_rules", {})
             tier_rules_inputs = {}
@@ -591,6 +638,13 @@ with tab4:
                     cfg["broker"]["port"] = broker_port
                     cfg["broker"]["client_id"] = broker_client_id
                     
+                    if "rules" not in cfg:
+                        cfg["rules"] = {}
+                    cfg["rules"]["min_fundamental_score"] = min_fundamental_score
+                    cfg["rules"]["min_technical_score"] = min_technical_score
+                    cfg["rules"]["min_news_score"] = min_news_score
+                    cfg["rules"]["earnings_shield_days"] = earnings_shield_days
+
                     if "tier_rules" not in cfg:
                         cfg["tier_rules"] = {}
                     for tier in ["high", "moderate", "low"]:

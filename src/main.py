@@ -265,6 +265,15 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
         active_positions_count = len(active_trades)
         max_positions = config.get("risk", {}).get("max_positions", 5)
         
+        # Load rules configurations
+        rules_cfg = config.get("rules", {})
+        min_fund = rules_cfg.get("min_fundamental_score", 5.0)
+        min_tech = rules_cfg.get("min_technical_score", 7.0)
+        min_news = rules_cfg.get("min_news_score", 5.0)
+        earnings_days = rules_cfg.get("earnings_shield_days", 3)
+        
+        evaluations = []
+        
         if active_positions_count >= max_positions:
             logger.info(f"Portfolio is at max position limit ({active_positions_count}/{max_positions}). Skipping scanner.")
         else:
@@ -311,31 +320,71 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                     
                     logger.info(f"Evaluating candidate {symbol} for '{tier}' risk tier...")
     
+                    passed_shield = True
+                    reason = None
+                    news_score = None
+                    news_verd = None
+                    tech_score = None
+                    tech_verd = None
+                    fund_score = None
+                    fund_verd = None
+                    status = "Passed"
+                    
                     # A. Earnings Shield Check
-                    passed_shield, reason = news_agent.check_earnings_shield(symbol)
+                    passed_shield, reason = news_agent.check_earnings_shield(symbol, days_range=earnings_days)
                     if not passed_shield:
                         logger.info(f"Skipping {symbol}: Earnings shield active ({reason})")
-                        continue
-    
-                    # B. News Sentiment Check
-                    news_analysis = news_agent.analyze_news(symbol, learnings_feedback=learnings_feedback)
-                    logger.info(f"News Verdict for {symbol}: {news_analysis['verdict']} | Score: {news_analysis['sentiment_score']}/10")
-                    if news_analysis["verdict"] == "NEGATIVE":
-                        logger.info(f"Skipping {symbol}: Negative news sentiment.")
-                        continue
-    
-                    # C. Technical Analysis Check
-                    tech_analysis = tech_agent.analyze(symbol, cand, learnings_feedback=learnings_feedback)
-                    logger.info(f"Technical Verdict for {symbol}: {tech_analysis['verdict']} | Score: {tech_analysis['score']}/10")
-                    if tech_analysis["verdict"] != "BULLISH":
-                        logger.info(f"Skipping {symbol}: Technical setup not bullish.")
-                        continue
-    
-                    # D. Fundamental Analysis Check
-                    fund_analysis = fund_agent.analyze(symbol, learnings_feedback=learnings_feedback)
-                    logger.info(f"Fundamental Verdict for {symbol}: {fund_analysis['verdict']} | Score: {fund_analysis['score']}/10")
-                    if fund_analysis["verdict"] == "UNFAVORABLE":
-                        logger.info(f"Skipping {symbol}: Unfavorable fundamentals.")
+                        status = f"Skipped: Earnings Shield ({reason})"
+                    else:
+                        # B. News Sentiment Check
+                        news_analysis = news_agent.analyze_news(symbol, learnings_feedback=learnings_feedback)
+                        news_score = news_analysis.get("sentiment_score", 5.0)
+                        news_verd = news_analysis.get("verdict", "NEUTRAL")
+                        logger.info(f"News Verdict for {symbol}: {news_verd} | Score: {news_score}/10")
+                        
+                        if news_verd == "NEGATIVE" or news_score < min_news:
+                            logger.info(f"Skipping {symbol}: News sentiment insufficient.")
+                            status = f"Skipped: News Sentiment ({news_verd}, Score: {news_score})"
+                        else:
+                            # C. Technical Analysis Check
+                            tech_analysis = tech_agent.analyze(symbol, cand, learnings_feedback=learnings_feedback)
+                            tech_score = tech_analysis.get("score", 5.0)
+                            tech_verd = tech_analysis.get("verdict", "NEUTRAL")
+                            logger.info(f"Technical Verdict for {symbol}: {tech_verd} | Score: {tech_score}/10")
+                            
+                            if tech_verd != "BULLISH" or tech_score < min_tech:
+                                logger.info(f"Skipping {symbol}: Technical setup insufficient.")
+                                status = f"Skipped: Technical Setup ({tech_verd}, Score: {tech_score})"
+                            else:
+                                # D. Fundamental Analysis Check
+                                fund_analysis = fund_agent.analyze(symbol, learnings_feedback=learnings_feedback)
+                                fund_score = fund_analysis.get("score", 5.0)
+                                fund_verd = fund_analysis.get("verdict", "NEUTRAL")
+                                logger.info(f"Fundamental Verdict for {symbol}: {fund_verd} | Score: {fund_score}/10")
+                                
+                                if fund_verd == "UNFAVORABLE" or fund_score < min_fund:
+                                    logger.info(f"Skipping {symbol}: Unfavorable fundamentals.")
+                                    status = f"Skipped: Fundamental Strength ({fund_verd}, Score: {fund_score})"
+                    
+                    # Log candidate evaluation snapshot
+                    eval_entry = {
+                        "symbol": symbol,
+                        "risk_tier": tier,
+                        "timestamp": datetime.now().isoformat(),
+                        "status": status,
+                        "analysis": {
+                            "earnings_checked": "PASSED" if passed_shield else "TRIGGERED",
+                            "news_score": news_score,
+                            "news_verdict": news_verd,
+                            "tech_score": tech_score,
+                            "tech_verdict": tech_verd,
+                            "fund_score": fund_score,
+                            "fund_verdict": fund_verd
+                        }
+                    }
+                    evaluations.append(eval_entry)
+                    
+                    if status != "Passed":
                         continue
     
                     # E. Position Sizing & Entry Execution
@@ -349,6 +398,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                     qty = sizing["quantity"]
                     if qty <= 0:
                         logger.warning(f"Sizing calculation returned quantity 0 for {symbol}. Skipping.")
+                        eval_entry["status"] = "Skipped: Quantity Sized to 0"
                         continue
     
                     logger.info(f"Candidate {symbol} passed all filters. Buying {qty} shares (Capital Required: ${sizing['capital_required']:.2f}, Stop Loss: ${sizing['stop_loss_price']:.2f})")
@@ -365,19 +415,23 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                             "order_id": order_id,
                             "risk_tier": tier,
                             "analysis": {
-                                "news_score": news_analysis.get("sentiment_score", 5.0),
-                                "news_verdict": news_analysis.get("verdict", "NEUTRAL"),
-                                "tech_score": tech_analysis.get("score", 5.0),
-                                "tech_verdict": tech_analysis.get("verdict", "BULLISH"),
-                                "fund_score": fund_analysis.get("score", 5.0),
-                                "fund_verdict": fund_analysis.get("verdict", "FAVORABLE")
+                                "news_score": news_score,
+                                "news_verdict": news_verd,
+                                "tech_score": tech_score,
+                                "tech_verdict": tech_verd,
+                                "fund_score": fund_score,
+                                "fund_verdict": fund_verd
                             }
                         }
                         slots_available -= 1
                         available_tier_cap -= sizing["capital_required"]
+                        eval_entry["status"] = "Purchased"
 
             # Save state after scans and executions
             state["active_trades"] = active_trades
+            if "candidate_evaluations" not in state:
+                state["candidate_evaluations"] = []
+            state["candidate_evaluations"] = (evaluations + state["candidate_evaluations"])[:50]
             save_state(state)
 
     except Exception as e:
