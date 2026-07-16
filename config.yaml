@@ -1,7 +1,7 @@
 # Multi-Agent Trading System Configuration
 
 trading:
-  dry_run: true  # If true, queries LLMs and scans, but does not place real orders. Set to false to execute paper/live trades.
+  dry_run: false  # If true, queries LLMs and scans, but does not place real orders. Set to false to execute paper/live trades.
 
 allocation:
   high_risk_pct: 0.30
@@ -14,7 +14,7 @@ llm:
 
 broker:
   host: "127.0.0.1"
-  port: 4002  # 4002 is paper trading port in IB Gateway, 4001 is live
+  port: 4001  # 4002 is paper trading port in IB Gateway, 4001 is live
   client_id: 88
 
 risk:
