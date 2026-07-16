@@ -87,13 +87,13 @@ Environment=PYTHONPATH=$APP_DIR
 User=root
 EOF
 
-# Timer definition (Runs every hour during trading hours on weekdays)
+# Timer definition (Runs every 30 minutes during trading hours on weekdays)
 cat <<EOF > /etc/systemd/system/trading-agent.timer
 [Unit]
-Description=Run Intelligent Invest Trading Cycle every hour during trading hours
+Description=Run Intelligent Invest Trading Cycle every 30 minutes during trading hours
 
 [Timer]
-OnCalendar=Mon-Fri *-*-* 09,10,11,12,13,14,15:30:00
+OnCalendar=Mon-Fri *-*-* 09,10,11,12,13,14,15:00,30:00
 Unit=trading-agent.service
 
 [Install]
