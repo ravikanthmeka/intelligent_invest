@@ -48,8 +48,41 @@ def save_state(state: Dict[str, Any]):
     except Exception as e:
         logger.error(f"Error writing state file: {e}")
 
+def compile_learnings_feedback(state: Dict[str, Any]) -> str:
+    completed = state.get("completed_trades", [])
+    if not completed:
+        return ""
+    
+    successful = [t for t in completed if t.get("realized_pnl", 0) > 0]
+    failed = [t for t in completed if t.get("realized_pnl", 0) <= 0]
+    
+    feedback = f"Total Completed Trades: {len(completed)} ({len(successful)} wins, {len(failed)} losses)\n"
+    if successful:
+        symbols = [t['symbol'] for t in successful[-5:]]
+        feedback += f"- Recent Profitable Tickers: {', '.join(symbols)}\n"
+    if failed:
+        symbols = [t['symbol'] for t in failed[-5:]]
+        feedback += f"- Recent Losing/Stopped-out Tickers: {', '.join(symbols)}\n"
+    
+    if successful:
+        avg_tech_win = sum(t.get("analysis", {}).get("tech_score", 5.0) for t in successful) / len(successful)
+        avg_fund_win = sum(t.get("analysis", {}).get("fund_score", 5.0) for t in successful) / len(successful)
+        feedback += f"- Successful Trades Avg Scores: Tech: {avg_tech_win:.1f}/10, Fund: {avg_fund_win:.1f}/10\n"
+    if failed:
+        avg_tech_loss = sum(t.get("analysis", {}).get("tech_score", 5.0) for t in failed) / len(failed)
+        avg_fund_loss = sum(t.get("analysis", {}).get("fund_score", 5.0) for t in failed) / len(failed)
+        feedback += f"- Failed Trades Avg Scores: Tech: {avg_tech_loss:.1f}/10, Fund: {avg_fund_loss:.1f}/10\n"
+        
+    return feedback
+
 async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
     logger.info("=== Starting Trading Cycle ===")
+    
+    # 0. Load state and compile learnings
+    state = load_state()
+    learnings_feedback = compile_learnings_feedback(state)
+    if learnings_feedback:
+        logger.info(f"Loaded past learnings feedback:\n{learnings_feedback}")
     
     # 1. Initialize LLM Client and Agents
     llm = LLMClient(
@@ -57,7 +90,12 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
         model=config.get("llm", {}).get("model")
     )
     
-    scanner = MarketScannerAgent(tickers=config.get("watchlist", []), llm=llm)
+    scanner = MarketScannerAgent(
+        tickers=config.get("watchlist", []),
+        llm=llm,
+        tier_rules=config.get("tier_rules", {}),
+        learnings_feedback=learnings_feedback
+    )
     tech_agent = TechnicalAgent(llm=llm)
     fund_agent = FundamentalAgent(llm=llm)
     news_agent = NewsAgent(llm=llm)
@@ -94,7 +132,6 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
 
     try:
         # Load local trade tracking state
-        state = load_state()
         active_trades = state.get("active_trades", {})
 
         # 3. Get current portfolio details
@@ -112,6 +149,31 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
         for symbol in list(active_trades.keys()):
             if symbol not in broker_symbols:
                 logger.info(f"Removing {symbol} from tracking state (no longer active in broker portfolio).")
+                # Archive the stop loss hit
+                trade_info = active_trades[symbol]
+                entry_price = trade_info.get("entry_price", 1.0)
+                exit_price = trade_info.get("stop_loss_price", entry_price * 0.94)
+                qty = trade_info.get("quantity", 0)
+                pnl = (exit_price - entry_price) * qty
+                ret_pct = (exit_price - entry_price) / entry_price if entry_price else 0.0
+                
+                completed_trade = {
+                    "symbol": symbol,
+                    "risk_tier": trade_info.get("risk_tier", "moderate"),
+                    "quantity": qty,
+                    "entry_price": entry_price,
+                    "exit_price": exit_price,
+                    "initial_capital": trade_info.get("initial_capital", 0.0),
+                    "purchased_at": trade_info.get("purchased_at", ""),
+                    "sold_at": datetime.now().isoformat(),
+                    "realized_pnl": pnl,
+                    "return_pct": ret_pct,
+                    "exit_reason": "Stop loss triggered (broker execution)",
+                    "analysis": trade_info.get("analysis", {})
+                }
+                if "completed_trades" not in state:
+                    state["completed_trades"] = []
+                state["completed_trades"].append(completed_trade)
                 del active_trades[symbol]
 
         # 4. Evaluate existing positions (Trailing Stops / Profit Targets)
@@ -163,6 +225,25 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                 logger.info(f"Liquidating position in {symbol}...")
                 success = await broker.execute_sell_all(symbol)
                 if success and symbol in active_trades:
+                    # Move to completed_trades
+                    trade_info = active_trades[symbol]
+                    completed_trade = {
+                        "symbol": symbol,
+                        "risk_tier": trade_info.get("risk_tier", "moderate"),
+                        "quantity": trade_info.get("quantity", 0),
+                        "entry_price": trade_info.get("entry_price", avg_cost),
+                        "exit_price": current_price,
+                        "initial_capital": trade_info.get("initial_capital", 0.0),
+                        "purchased_at": trade_info.get("purchased_at", ""),
+                        "sold_at": datetime.now().isoformat(),
+                        "realized_pnl": unrealized_pnl,
+                        "return_pct": return_pct,
+                        "exit_reason": decision.get("rationale", "Stop loss / profit target liquidation"),
+                        "analysis": trade_info.get("analysis", {})
+                    }
+                    if "completed_trades" not in state:
+                        state["completed_trades"] = []
+                    state["completed_trades"].append(completed_trade)
                     del active_trades[symbol]
             elif action == "HOLD_RAISE_STOP":
                 new_stop = decision["new_stop"]
@@ -234,21 +315,21 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                         continue
     
                     # B. News Sentiment Check
-                    news_analysis = news_agent.analyze_news(symbol)
+                    news_analysis = news_agent.analyze_news(symbol, learnings_feedback=learnings_feedback)
                     logger.info(f"News Verdict for {symbol}: {news_analysis['verdict']} | Score: {news_analysis['sentiment_score']}/10")
                     if news_analysis["verdict"] == "NEGATIVE":
                         logger.info(f"Skipping {symbol}: Negative news sentiment.")
                         continue
     
                     # C. Technical Analysis Check
-                    tech_analysis = tech_agent.analyze(symbol, cand)
+                    tech_analysis = tech_agent.analyze(symbol, cand, learnings_feedback=learnings_feedback)
                     logger.info(f"Technical Verdict for {symbol}: {tech_analysis['verdict']} | Score: {tech_analysis['score']}/10")
                     if tech_analysis["verdict"] != "BULLISH":
                         logger.info(f"Skipping {symbol}: Technical setup not bullish.")
                         continue
     
                     # D. Fundamental Analysis Check
-                    fund_analysis = fund_agent.analyze(symbol)
+                    fund_analysis = fund_agent.analyze(symbol, learnings_feedback=learnings_feedback)
                     logger.info(f"Fundamental Verdict for {symbol}: {fund_analysis['verdict']} | Score: {fund_analysis['score']}/10")
                     if fund_analysis["verdict"] == "UNFAVORABLE":
                         logger.info(f"Skipping {symbol}: Unfavorable fundamentals.")
@@ -279,7 +360,15 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                             "initial_capital": sizing["capital_required"],
                             "purchased_at": datetime.now().isoformat(),
                             "order_id": order_id,
-                            "risk_tier": tier  # Tracked risk tier
+                            "risk_tier": tier,
+                            "analysis": {
+                                "news_score": news_analysis.get("sentiment_score", 5.0),
+                                "news_verdict": news_analysis.get("verdict", "NEUTRAL"),
+                                "tech_score": tech_analysis.get("score", 5.0),
+                                "tech_verdict": tech_analysis.get("verdict", "BULLISH"),
+                                "fund_score": fund_analysis.get("score", 5.0),
+                                "fund_verdict": fund_analysis.get("verdict", "FAVORABLE")
+                            }
                         }
                         slots_available -= 1
                         available_tier_cap -= sizing["capital_required"]

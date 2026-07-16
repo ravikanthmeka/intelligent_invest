@@ -11,10 +11,12 @@ from src.skills.risk_management import CalculatePositionSizeSkill, EvaluateActiv
 logger = logging.getLogger("SpecializedAgents")
 
 class MarketScannerAgent(Agent):
-    def __init__(self, tickers: List[str], llm: LLMClient = None):
+    def __init__(self, tickers: List[str], llm: LLMClient = None, tier_rules: Dict[str, Any] = None, learnings_feedback: str = ""):
         super().__init__(name="MarketScannerAgent", role="Scan watchlist or dynamic suggestions for bullish trading candidates.")
         self.tickers = tickers
         self.llm = llm
+        self.tier_rules = tier_rules or {}
+        self.learnings_feedback = learnings_feedback
         self.register_skill(CalculateIndicatorsSkill())
 
     def scan(self) -> List[Dict[str, Any]]:
@@ -22,14 +24,28 @@ class MarketScannerAgent(Agent):
 
     def scan_tier(self, risk_tier: str) -> List[Dict[str, Any]]:
         logger.info(f"Generating ticker suggestions for risk tier: {risk_tier}...")
+        
+        tier_conf = self.tier_rules.get(risk_tier, {})
+        guidelines = tier_conf.get("guidelines", "")
+        if not guidelines:
+            if risk_tier == "high":
+                guidelines = "High-beta, high-growth technology, biotech, or emerging stocks with high volatility."
+            elif risk_tier == "low":
+                guidelines = "Low-beta, defensive stocks, utilities, consumer staples, or high-quality dividend payers."
+            else:
+                guidelines = "Stable growth stocks, mid-large cap leaders with solid earnings and moderate volatility."
+
+        min_rsi = tier_conf.get("min_rsi", 45)
+        max_rsi = tier_conf.get("max_rsi", 70)
+        require_trend = tier_conf.get("require_trend", True)
+
         tickers = []
         if self.llm:
+            learnings_str = f"\nPortfolio learnings from past trades:\n{self.learnings_feedback}\n" if self.learnings_feedback else ""
             prompt = f"""
             Suggest a list of 12 US stock ticker symbols that represent the '{risk_tier}' risk/return profile:
-            - 'high': High-beta, high-growth technology, biotech, or emerging stocks with high volatility.
-            - 'moderate': Stable growth stocks, mid-large cap leaders with solid earnings and moderate volatility.
-            - 'low': Low-beta, defensive stocks, utilities, consumer staples, or high-quality dividend payers.
-
+            Guidelines: {guidelines}
+            {learnings_str}
             Respond in valid JSON structure:
             {{
                 "tickers": ["SYMBOL1", "SYMBOL2", ...]
@@ -67,8 +83,11 @@ class MarketScannerAgent(Agent):
                 sma_200 = last_row['SMA_200']
                 rsi = last_row['RSI']
                 
-                # Check for basic bullish criteria
-                if (close > sma_50 and sma_50 > sma_200 and rsi > 45 and rsi < 70):
+                # Check for dynamic technical criteria
+                rsi_ok = (rsi > min_rsi and rsi < max_rsi)
+                trend_ok = (not require_trend) or (close > sma_50 and sma_50 > sma_200)
+                
+                if rsi_ok and trend_ok:
                     candidates.append({
                         "symbol": symbol,
                         "close": close,
@@ -91,9 +110,9 @@ class TechnicalAgent(Agent):
         self.llm = llm
         self.register_skill(TechnicalAnalysisSkill(llm))
 
-    def analyze(self, symbol: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    def analyze(self, symbol: str, data: Dict[str, Any], learnings_feedback: str = "") -> Dict[str, Any]:
         tech_skill = self.get_skill("TechnicalAnalysis")
-        return tech_skill.execute(symbol, data)
+        return tech_skill.execute(symbol, data, learnings_feedback=learnings_feedback)
 
 class FundamentalAgent(Agent):
     def __init__(self, llm: LLMClient):
@@ -101,9 +120,9 @@ class FundamentalAgent(Agent):
         self.llm = llm
         self.register_skill(FundamentalAnalysisSkill(llm))
 
-    def analyze(self, symbol: str) -> Dict[str, Any]:
+    def analyze(self, symbol: str, learnings_feedback: str = "") -> Dict[str, Any]:
         fund_skill = self.get_skill("FundamentalAnalysis")
-        return fund_skill.execute(symbol)
+        return fund_skill.execute(symbol, learnings_feedback=learnings_feedback)
 
 class NewsAgent(Agent):
     def __init__(self, llm: LLMClient):
@@ -117,12 +136,12 @@ class NewsAgent(Agent):
         shield_skill = self.get_skill("FetchEarningsCalendar")
         return shield_skill.execute(symbol)
 
-    def analyze_news(self, symbol: str) -> Dict[str, Any]:
+    def analyze_news(self, symbol: str, learnings_feedback: str = "") -> Dict[str, Any]:
         fetch_news_skill = self.get_skill("FetchRecentNews")
         news_sentiment_skill = self.get_skill("NewsSentiment")
         
         news_items = fetch_news_skill.execute(symbol)
-        return news_sentiment_skill.execute(symbol, news_items)
+        return news_sentiment_skill.execute(symbol, news_items, learnings_feedback=learnings_feedback)
 
 class RiskAgent(Agent):
     def __init__(self, max_positions: int = 5, max_cap_pct: float = 0.20, risk_pct: float = 0.01, min_stop_loss_pct: float = 0.05, max_stop_loss_pct: float = 0.07, trail_trigger_pct: float = 0.03):

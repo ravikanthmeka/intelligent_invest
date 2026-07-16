@@ -362,10 +362,36 @@ with col_tier3:
         <div class="kpi-title">🟢 Low Risk (Target: {low_target_pct*100:.0f}%)</div>
         <div class="kpi-val">${low_deployed:,.2f} / ${low_target_cap:,.2f}</div>
     </div>
-    """, unsafe_allow_html=True)
+    """, unsafe_allow_html=True)# Helper: compile learnings
+def compile_learnings_feedback(state: Dict[str, Any]) -> str:
+    completed = state.get("completed_trades", [])
+    if not completed:
+        return ""
+    
+    successful = [t for t in completed if t.get("realized_pnl", 0) > 0]
+    failed = [t for t in completed if t.get("realized_pnl", 0) <= 0]
+    
+    feedback = f"Total Completed Trades: {len(completed)} ({len(successful)} wins, {len(failed)} losses)\n"
+    if successful:
+        symbols = [t['symbol'] for t in successful[-5:]]
+        feedback += f"- Recent Profitable Tickers: {', '.join(symbols)}\n"
+    if failed:
+        symbols = [t['symbol'] for t in failed[-5:]]
+        feedback += f"- Recent Losing/Stopped-out Tickers: {', '.join(symbols)}\n"
+    
+    if successful:
+        avg_tech_win = sum(t.get("analysis", {}).get("tech_score", 5.0) for t in successful) / len(successful)
+        avg_fund_win = sum(t.get("analysis", {}).get("fund_score", 5.0) for t in successful) / len(successful)
+        feedback += f"- Successful Trades Avg Scores: Tech: {avg_tech_win:.1f}/10, Fund: {avg_fund_win:.1f}/10\n"
+    if failed:
+        avg_tech_loss = sum(t.get("analysis", {}).get("tech_score", 5.0) for t in failed) / len(failed)
+        avg_fund_loss = sum(t.get("analysis", {}).get("fund_score", 5.0) for t in failed) / len(failed)
+        feedback += f"- Failed Trades Avg Scores: Tech: {avg_tech_loss:.1f}/10, Fund: {avg_fund_loss:.1f}/10\n"
+        
+    return feedback
 
 # Layout: Main Body
-tab1, tab2, tab3 = st.tabs(["📊 Active Positions", "📜 System Logs", "⚙️ settings & Risk Rules"])
+tab1, tab2, tab3, tab4 = st.tabs(["📊 Active Positions", "📜 Trade Log & AI Learnings", "📜 System Logs", "⚙️ Settings & Risk Rules"])
 
 with tab1:
     st.write("### Portfolio Breakdown")
@@ -378,6 +404,51 @@ with tab1:
         st.info("No active positions currently tracked. Run the agent cycle to scan for entries.")
 
 with tab2:
+    st.write("### AI Brain Feed & Portfolio Learnings")
+    learnings = compile_learnings_feedback(state)
+    if learnings:
+        st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #1e1b4b 0%, #311042 100%); border: 1px solid #4c1d95; padding: 24px; border-radius: 8px; margin-bottom: 24px;">
+            <h4 style="margin-top:0; color:#fafafa; font-family:'DM Sans', sans-serif; display:flex; align-items:center; gap:8px;">
+                🧠 AI Portfolio Learnings Loop
+            </h4>
+            <p style="color:#c084fc; font-family:'JetBrains Mono', monospace; font-size:14px; white-space:pre-line; margin-bottom:0;">
+                {learnings}
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("No completed trades recorded yet. The system will automatically build learnings once trades are closed.")
+
+    st.write("### Completed Trades History")
+    completed_trades = state.get("completed_trades", [])
+    if completed_trades:
+        completed_list = []
+        for t in completed_trades:
+            pnl = t.get("realized_pnl", 0.0)
+            ret_pct = t.get("return_pct", 0.0) * 100
+            
+            scores = t.get("analysis", {})
+            scores_str = f"Tech: {scores.get('tech_score', 'N/A')}, Fund: {scores.get('fund_score', 'N/A')}, News: {scores.get('news_score', 'N/A')}"
+            
+            completed_list.append({
+                "Symbol": t.get("symbol"),
+                "Risk Tier": t.get("risk_tier", "moderate").upper(),
+                "Qty": t.get("quantity", 0),
+                "Entry Price": f"${t.get('entry_price', 0.0):.2f}",
+                "Exit Price": f"${t.get('exit_price', 0.0):.2f}",
+                "Realized P&L": f"${pnl:+,.2f}",
+                "Return (%)": f"{ret_pct:+.2f}%",
+                "Exit Reason": t.get("exit_reason", ""),
+                "Entry Scores Snapshot": scores_str,
+                "Purchased At": t.get("purchased_at", "")[:19].replace("T", " "),
+                "Sold At": t.get("sold_at", "")[:19].replace("T", " ")
+            })
+        st.dataframe(pd.DataFrame(completed_list), use_container_width=True)
+    else:
+        st.info("No completed trades history yet.")
+
+with tab3:
     st.write("### Latest Agent Execution Logs")
     logs = load_system_logs(100)
     log_text = "".join(logs)
@@ -386,7 +457,7 @@ with tab2:
     <pre class="log-container">{log_text}</pre>
     """, unsafe_allow_html=True)
 
-with tab3:
+with tab4:
     st.write("### Configure Trading & Risk Rules")
     cfg = load_config()
     if cfg:
@@ -440,12 +511,12 @@ with tab3:
                                               value=float(cfg.get("risk", {}).get("max_stop_loss_pct", 0.07) * 100)) / 100.0
                 trail_trigger_pct = st.slider("Trailing Stop Trigger Threshold (%)", min_value=1.0, max_value=20.0, step=0.5,
                                               value=float(cfg.get("risk", {}).get("trail_trigger_pct", 0.03) * 100)) / 100.0
-
+ 
             st.write("#### Portfolio Allocation Targets")
             high_pct_val = int(cfg.get("allocation", {}).get("high_risk_pct", 0.30) * 100)
             mod_pct_val = int(cfg.get("allocation", {}).get("moderate_risk_pct", 0.40) * 100)
             low_pct_val = int(cfg.get("allocation", {}).get("low_risk_pct", 0.30) * 100)
-
+ 
             col_alloc1, col_alloc2, col_alloc3 = st.columns(3)
             with col_alloc1:
                 high_risk_pct_input = st.slider("High Risk Allocation (%)", min_value=0, max_value=100, step=5, value=high_pct_val)
@@ -458,6 +529,25 @@ with tab3:
             if total_alloc_sum != 100:
                 st.warning(f"⚠️ Allocations currently sum to **{total_alloc_sum}%**. They MUST sum to exactly 100% to save.")
 
+            st.write("#### Risk Tier Specifications")
+            tier_rules = cfg.get("tier_rules", {})
+            tier_rules_inputs = {}
+            for tier in ["high", "moderate", "low"]:
+                st.write(f"**{tier.upper()} RISK TIER RULES**")
+                col_t1, col_t2, col_t3, col_t4 = st.columns(4)
+                
+                tier_conf = tier_rules.get(tier, {})
+                with col_t1:
+                    t_guidelines = st.text_input(f"LLM Search Guidelines ({tier})", value=tier_conf.get("guidelines", ""), key=f"{tier}_guidelines_input")
+                with col_t2:
+                    t_min_rsi = st.slider(f"Min RSI ({tier})", min_value=10, max_value=90, value=int(tier_conf.get("min_rsi", 45)), key=f"{tier}_min_rsi_input")
+                with col_t3:
+                    t_max_rsi = st.slider(f"Max RSI ({tier})", min_value=20, max_value=95, value=int(tier_conf.get("max_rsi", 70)), key=f"{tier}_max_rsi_input")
+                with col_t4:
+                    t_req_trend = st.toggle(f"Require Trend Shield ({tier})", value=bool(tier_conf.get("require_trend", True)), key=f"{tier}_req_trend_input")
+                
+                tier_rules_inputs[tier] = (t_guidelines, t_min_rsi, t_max_rsi, t_req_trend)
+ 
             st.write("#### Watchlist Tickers")
             current_watchlist = ", ".join(cfg.get("watchlist", []))
             watchlist_text = st.text_area("Watchlist (comma-separated tickers)", value=current_watchlist, 
@@ -497,6 +587,17 @@ with tab3:
                     cfg["broker"]["port"] = broker_port
                     cfg["broker"]["client_id"] = broker_client_id
                     
+                    if "tier_rules" not in cfg:
+                        cfg["tier_rules"] = {}
+                    for tier in ["high", "moderate", "low"]:
+                        t_g, t_min, t_max, t_req = tier_rules_inputs[tier]
+                        cfg["tier_rules"][tier] = {
+                            "guidelines": t_g,
+                            "min_rsi": int(t_min),
+                            "max_rsi": int(t_max),
+                            "require_trend": bool(t_req)
+                        }
+                    
                     watchlist_list = [t.strip().upper() for t in watchlist_text.split(",") if t.strip()]
                     cfg["watchlist"] = watchlist_list
                     
@@ -518,7 +619,7 @@ with tab3:
                                     st.info("Credentials or mode changed. IB Gateway container restarted. Please check MFA on your mobile device.")
                                 except Exception as e:
                                     st.error(f"Failed to restart IB Gateway container: {e}")
-
+ 
                             # Update systemd timer on EC2 host if running on Linux
                             update_systemd_timer(interval_minutes)
                             st.success("Configuration saved successfully! The next trading cycle will use these settings.")

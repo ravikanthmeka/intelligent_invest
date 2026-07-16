@@ -49,3 +49,21 @@ watchlist:
 
 scheduler:
   interval_minutes: 30
+
+tier_rules:
+  high:
+    guidelines: "High-beta, high-growth technology, biotech, or emerging stocks with high volatility."
+    min_rsi: 45
+    max_rsi: 70
+    require_trend: true
+  moderate:
+    guidelines: "Stable growth stocks, mid-large cap leaders with solid earnings and moderate volatility."
+    min_rsi: 45
+    max_rsi: 70
+    require_trend: true
+  low:
+    guidelines: "Low-beta, defensive stocks, utilities, consumer staples, or high-quality dividend payers."
+    min_rsi: 40
+    max_rsi: 65
+    require_trend: false
+

@@ -15,7 +15,8 @@ class TechnicalAnalysisSkill(Skill):
         )
         self.llm = llm
 
-    def execute(self, symbol: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    def execute(self, symbol: str, data: Dict[str, Any], learnings_feedback: str = "") -> Dict[str, Any]:
+        learnings_str = f"\nPortfolio learnings from past trades:\n{learnings_feedback}\n" if learnings_feedback else ""
         prompt = f"""
         Analyze the following technical indicator profile for stock ticker '{symbol}':
         - Current Price: ${data['close']:.2f}
@@ -24,7 +25,7 @@ class TechnicalAnalysisSkill(Skill):
         - 200-day Simple Moving Average (SMA): ${data['sma_200']:.2f}
         - 14-day Average True Range (ATR): ${data['atr']:.2f}
         - Volume Spike Detected: {data['volume_spike']}
-
+        {learnings_str}
         Provide a verdict. You must respond in a valid JSON structure:
         {{
             "verdict": "BULLISH" | "NEUTRAL" | "BEARISH",
@@ -49,7 +50,7 @@ class FundamentalAnalysisSkill(Skill):
         )
         self.llm = llm
 
-    def execute(self, symbol: str) -> Dict[str, Any]:
+    def execute(self, symbol: str, learnings_feedback: str = "") -> Dict[str, Any]:
         try:
             ticker_obj = yf.Ticker(symbol)
             info = ticker_obj.info
@@ -62,6 +63,7 @@ class FundamentalAnalysisSkill(Skill):
             margin = info.get("profitMargins", "N/A")
             fcf = info.get("freeCashflow", "N/A")
 
+            learnings_str = f"\nPortfolio learnings from past trades:\n{learnings_feedback}\n" if learnings_feedback else ""
             prompt = f"""
             Evaluate the financial fundamentals of company ticker '{symbol}':
             - Trailing P/E: {pe_ratio}
@@ -71,7 +73,7 @@ class FundamentalAnalysisSkill(Skill):
             - Year-over-Year Revenue Growth: {rev_growth}
             - Profit Margin: {margin}
             - Free Cash Flow: {fcf}
-
+            {learnings_str}
             Provide a fundamental strength score. Verify if company is financially healthy, has clean debt margins, and positive free cash flows.
             Respond in a valid JSON structure:
             {{
@@ -96,7 +98,7 @@ class NewsSentimentSkill(Skill):
         )
         self.llm = llm
 
-    def execute(self, symbol: str, news_items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def execute(self, symbol: str, news_items: List[Dict[str, Any]], learnings_feedback: str = "") -> Dict[str, Any]:
         try:
             news_summary = ""
             for item in news_items:
@@ -107,10 +109,11 @@ class NewsSentimentSkill(Skill):
             if not news_summary:
                 news_summary = "No recent news articles found."
 
+            learnings_str = f"\nPortfolio learnings from past trades:\n{learnings_feedback}\n" if learnings_feedback else ""
             prompt = f"""
             Analyze the recent headlines for stock '{symbol}':
             {news_summary}
-
+            {learnings_str}
             Identify any negative/positive binary events (lawsuits, product recalls, FDA approvals, executive departures).
             Provide a news sentiment verdict. Respond in valid JSON structure:
             {{
