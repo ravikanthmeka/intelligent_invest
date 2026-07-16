@@ -176,5 +176,27 @@ class TestRiskAgent(unittest.TestCase):
         self.assertEqual(decision["action"], "HOLD")
         self.assertEqual(decision["new_stop"], 94.0)
 
+    def test_position_sizing_tier_cap(self):
+        """
+        Verify position sizing is constrained by available tier capital.
+        Portfolio: $100,000. Risk 1% = $1,000.
+        Entry: $100. ATR: $2. Stop loss = 3 * ATR = $6 below entry -> $94.
+        Standard quantity = $1,000 / $6 = 166.
+        However, if available tier capital is $5,000:
+        Quantity should be capped at $5,000 / $100 = 50.
+        """
+        portfolio_val = 100000.0
+        entry_price = 100.0
+        atr = 2.0
+        available_tier_cap = 5000.0
+        
+        sizing = self.risk_agent.calculate_position_size(
+            portfolio_val, entry_price, atr, available_tier_capital=available_tier_cap
+        )
+        
+        self.assertEqual(sizing["quantity"], 50)
+        self.assertEqual(sizing["capital_required"], 5000.0)
+        self.assertEqual(sizing["capital_pct_of_portfolio"], 5.0)
+
 if __name__ == "__main__":
     unittest.main()

@@ -11,19 +11,49 @@ from src.skills.risk_management import CalculatePositionSizeSkill, EvaluateActiv
 logger = logging.getLogger("SpecializedAgents")
 
 class MarketScannerAgent(Agent):
-    def __init__(self, tickers: List[str]):
-        super().__init__(name="MarketScannerAgent", role="Scan watchlist for bullish trading candidates.")
+    def __init__(self, tickers: List[str], llm: LLMClient = None):
+        super().__init__(name="MarketScannerAgent", role="Scan watchlist or dynamic suggestions for bullish trading candidates.")
         self.tickers = tickers
+        self.llm = llm
         self.register_skill(CalculateIndicatorsSkill())
 
     def scan(self) -> List[Dict[str, Any]]:
-        logger.info(f"Scanning watchlist of {len(self.tickers)} tickers...")
+        return self.scan_tier("moderate")
+
+    def scan_tier(self, risk_tier: str) -> List[Dict[str, Any]]:
+        logger.info(f"Generating ticker suggestions for risk tier: {risk_tier}...")
+        tickers = []
+        if self.llm:
+            prompt = f"""
+            Suggest a list of 12 US stock ticker symbols that represent the '{risk_tier}' risk/return profile:
+            - 'high': High-beta, high-growth technology, biotech, or emerging stocks with high volatility.
+            - 'moderate': Stable growth stocks, mid-large cap leaders with solid earnings and moderate volatility.
+            - 'low': Low-beta, defensive stocks, utilities, consumer staples, or high-quality dividend payers.
+
+            Respond in valid JSON structure:
+            {{
+                "tickers": ["SYMBOL1", "SYMBOL2", ...]
+            }}
+            Do not add any markup or markdown wraps besides the raw JSON.
+            """
+            try:
+                response_text = self.llm.call(prompt, system_prompt="You are a professional equity research and portfolio analyst.")
+                import json
+                clean_text = response_text.replace("```json", "").replace("```", "").strip()
+                tickers = json.loads(clean_text).get("tickers", [])
+                logger.info(f"LLM suggested tickers for {risk_tier}: {tickers}")
+            except Exception as e:
+                logger.error(f"Error generating tickers from LLM for {risk_tier}: {e}")
+        
+        if not tickers:
+            logger.info(f"Falling back to default watchlist for {risk_tier} scan.")
+            tickers = self.tickers
+            
         candidates = []
         calc_skill = self.get_skill("CalculateIndicators")
         
-        for symbol in self.tickers:
+        for symbol in tickers:
             try:
-                # Fetch 1 year of daily data to compute indicators
                 ticker_obj = yf.Ticker(symbol)
                 df = ticker_obj.history(period="1y", interval="1d")
                 if len(df) < 50:
@@ -51,10 +81,9 @@ class MarketScannerAgent(Agent):
             except Exception as e:
                 logger.error(f"Error scanning {symbol}: {e}")
                 
-        # Sort candidates by a blend of momentum (RSI) and volume spike
         candidates.sort(key=lambda x: x['rsi'], reverse=True)
-        logger.info(f"Scan complete. Found {len(candidates)} bullish candidates.")
-        return candidates[:5]  # Return top 5 candidates
+        logger.info(f"Scan complete for {risk_tier}. Found {len(candidates)} bullish candidates.")
+        return candidates[:5]
 
 class TechnicalAgent(Agent):
     def __init__(self, llm: LLMClient):
@@ -108,7 +137,7 @@ class RiskAgent(Agent):
         self.register_skill(CalculatePositionSizeSkill(max_cap_pct=max_cap_pct, risk_pct=risk_pct, min_stop_loss_pct=min_stop_loss_pct, max_stop_loss_pct=max_stop_loss_pct))
         self.register_skill(EvaluateActivePositionSkill(trail_trigger_pct=trail_trigger_pct))
 
-    def calculate_position_size(self, portfolio_value: float, entry_price: float, atr: float) -> Dict[str, Any]:
+    def calculate_position_size(self, portfolio_value: float, entry_price: float, atr: float, available_tier_capital: float = None) -> Dict[str, Any]:
         size_skill = self.get_skill("CalculatePositionSize")
         return size_skill.execute(
             portfolio_value, 
@@ -117,7 +146,8 @@ class RiskAgent(Agent):
             risk_pct=self.risk_pct, 
             max_cap_pct=self.max_cap_pct,
             min_stop_loss_pct=self.min_stop_loss_pct,
-            max_stop_loss_pct=self.max_stop_loss_pct
+            max_stop_loss_pct=self.max_stop_loss_pct,
+            available_tier_capital=available_tier_capital
         )
 
     def evaluate_active_position(self, symbol: str, entry_price: float, current_price: float, current_stop: float, atr: float, momentum_is_strong: bool) -> Dict[str, Any]:

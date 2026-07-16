@@ -159,6 +159,7 @@ if active_positions_count > 0:
         positions_list.append({
             "Symbol": symbol,
             "Shares": qty,
+            "Risk Tier": details.get("risk_tier", "moderate").upper(),
             "Entry Price": f"${entry_price:.2f}",
             "Current Price": f"${current_price:.2f}",
             "Stop Loss": f"${stop_loss:.2f}",
@@ -202,6 +203,47 @@ with col4:
     <div class="kpi-card">
         <div class="kpi-title">Total Unrealized P&L</div>
         <div class="kpi-val" style="color: {color};">${total_unrealized_pnl:+,.2f}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# Calculate deployed capital by risk tier
+high_deployed = sum(details.get("initial_capital", 0.0) for symbol, details in active_trades.items() if details.get("risk_tier", "moderate") == "high")
+mod_deployed = sum(details.get("initial_capital", 0.0) for symbol, details in active_trades.items() if details.get("risk_tier", "moderate") == "moderate")
+low_deployed = sum(details.get("initial_capital", 0.0) for symbol, details in active_trades.items() if details.get("risk_tier", "moderate") == "low")
+
+# Load allocation percentages
+cfg_alloc = load_config()
+alloc_pcts = cfg_alloc.get("allocation", {"high_risk_pct": 0.30, "moderate_risk_pct": 0.40, "low_risk_pct": 0.30})
+high_target_pct = alloc_pcts.get("high_risk_pct", 0.30)
+mod_target_pct = alloc_pcts.get("moderate_risk_pct", 0.40)
+low_target_pct = alloc_pcts.get("low_risk_pct", 0.30)
+
+portfolio_total = 100000.0  # Dry-run baseline
+high_target_cap = portfolio_total * high_target_pct
+mod_target_cap = portfolio_total * mod_target_pct
+low_target_cap = portfolio_total * low_target_pct
+
+st.write("### Risk Tier Capital Allocation")
+col_tier1, col_tier2, col_tier3 = st.columns(3)
+with col_tier1:
+    st.markdown(f"""
+    <div class="kpi-card">
+        <div class="kpi-title">🔴 High Risk / High Return (Target: {high_target_pct*100:.0f}%)</div>
+        <div class="kpi-val">${high_deployed:,.2f} / ${high_target_cap:,.2f}</div>
+    </div>
+    """, unsafe_allow_html=True)
+with col_tier2:
+    st.markdown(f"""
+    <div class="kpi-card">
+        <div class="kpi-title">🟡 Moderate Risk (Target: {mod_target_pct*100:.0f}%)</div>
+        <div class="kpi-val">${mod_deployed:,.2f} / ${mod_target_cap:,.2f}</div>
+    </div>
+    """, unsafe_allow_html=True)
+with col_tier3:
+    st.markdown(f"""
+    <div class="kpi-card">
+        <div class="kpi-title">🟢 Low Risk (Target: {low_target_pct*100:.0f}%)</div>
+        <div class="kpi-val">${low_deployed:,.2f} / ${low_target_cap:,.2f}</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -253,6 +295,23 @@ with tab3:
                 trail_trigger_pct = st.slider("Trailing Stop Trigger Threshold (%)", min_value=1.0, max_value=20.0, step=0.5,
                                               value=float(cfg.get("risk", {}).get("trail_trigger_pct", 0.03) * 100)) / 100.0
 
+            st.write("#### Portfolio Allocation Targets")
+            high_pct_val = int(cfg.get("allocation", {}).get("high_risk_pct", 0.30) * 100)
+            mod_pct_val = int(cfg.get("allocation", {}).get("moderate_risk_pct", 0.40) * 100)
+            low_pct_val = int(cfg.get("allocation", {}).get("low_risk_pct", 0.30) * 100)
+
+            col_alloc1, col_alloc2, col_alloc3 = st.columns(3)
+            with col_alloc1:
+                high_risk_pct_input = st.slider("High Risk Allocation (%)", min_value=0, max_value=100, step=5, value=high_pct_val)
+            with col_alloc2:
+                mod_risk_pct_input = st.slider("Moderate Risk Allocation (%)", min_value=0, max_value=100, step=5, value=mod_pct_val)
+            with col_alloc3:
+                low_risk_pct_input = st.slider("Low Risk Allocation (%)", min_value=0, max_value=100, step=5, value=low_pct_val)
+            
+            total_alloc_sum = high_risk_pct_input + mod_risk_pct_input + low_risk_pct_input
+            if total_alloc_sum != 100:
+                st.warning(f"⚠️ Allocations currently sum to **{total_alloc_sum}%**. They MUST sum to exactly 100% to save.")
+
             st.write("#### Watchlist Tickers")
             current_watchlist = ", ".join(cfg.get("watchlist", []))
             watchlist_text = st.text_area("Watchlist (comma-separated tickers)", value=current_watchlist, 
@@ -260,25 +319,34 @@ with tab3:
             
             submit_btn = st.form_submit_button("Save Configuration & Rules")
             if submit_btn:
-                if "trading" not in cfg:
-                    cfg["trading"] = {}
-                cfg["trading"]["dry_run"] = dry_run
-                
-                if "risk" not in cfg:
-                    cfg["risk"] = {}
-                cfg["risk"]["max_positions"] = max_positions
-                cfg["risk"]["max_capital_pct"] = max_capital_pct
-                cfg["risk"]["risk_per_trade_pct"] = risk_per_trade_pct
-                cfg["risk"]["min_stop_loss_pct"] = min_stop_loss_pct
-                cfg["risk"]["max_stop_loss_pct"] = max_stop_loss_pct
-                cfg["risk"]["trail_trigger_pct"] = trail_trigger_pct
-                
-                watchlist_list = [t.strip().upper() for t in watchlist_text.split(",") if t.strip()]
-                cfg["watchlist"] = watchlist_list
-                
-                if save_config(cfg):
-                    st.success("Configuration saved successfully! The next trading cycle will use these settings.")
-                    st.rerun()
+                if total_alloc_sum != 100:
+                    st.error("Cannot save: Portfolio Allocation Targets must sum to exactly 100%.")
+                else:
+                    if "trading" not in cfg:
+                        cfg["trading"] = {}
+                    cfg["trading"]["dry_run"] = dry_run
+                    
+                    if "risk" not in cfg:
+                        cfg["risk"] = {}
+                    cfg["risk"]["max_positions"] = max_positions
+                    cfg["risk"]["max_capital_pct"] = max_capital_pct
+                    cfg["risk"]["risk_per_trade_pct"] = risk_per_trade_pct
+                    cfg["risk"]["min_stop_loss_pct"] = min_stop_loss_pct
+                    cfg["risk"]["max_stop_loss_pct"] = max_stop_loss_pct
+                    cfg["risk"]["trail_trigger_pct"] = trail_trigger_pct
+                    
+                    if "allocation" not in cfg:
+                        cfg["allocation"] = {}
+                    cfg["allocation"]["high_risk_pct"] = high_risk_pct_input / 100.0
+                    cfg["allocation"]["moderate_risk_pct"] = mod_risk_pct_input / 100.0
+                    cfg["allocation"]["low_risk_pct"] = low_risk_pct_input / 100.0
+                    
+                    watchlist_list = [t.strip().upper() for t in watchlist_text.split(",") if t.strip()]
+                    cfg["watchlist"] = watchlist_list
+                    
+                    if save_config(cfg):
+                        st.success("Configuration saved successfully! The next trading cycle will use these settings.")
+                        st.rerun()
 
 # Auto Refresh UI Checkbox
 st.sidebar.write("### Refresh Controls")

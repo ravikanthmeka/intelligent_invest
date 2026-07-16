@@ -57,7 +57,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
         model=config.get("llm", {}).get("model")
     )
     
-    scanner = MarketScannerAgent(tickers=config.get("watchlist", []))
+    scanner = MarketScannerAgent(tickers=config.get("watchlist", []), llm=llm)
     tech_agent = TechnicalAgent(llm=llm)
     fund_agent = FundamentalAgent(llm=llm)
     news_agent = NewsAgent(llm=llm)
@@ -185,73 +185,104 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
             logger.info(f"Portfolio is at max position limit ({active_positions_count}/{max_positions}). Skipping scanner.")
         else:
             slots_available = max_positions - active_positions_count
-            logger.info(f"Scanning for candidates to fill {slots_available} available slots...")
+            logger.info(f"Scanning for candidates to fill {slots_available} available slots across risk tiers...")
             
-            candidates = scanner.scan()
+            # Load allocation percentages
+            alloc = config.get("allocation", {"high_risk_pct": 0.30, "moderate_risk_pct": 0.40, "low_risk_pct": 0.30})
             
-            for cand in candidates:
-                symbol = cand["symbol"]
-                if symbol in active_trades:
-                    continue  # Already in portfolio
+            for tier, tier_pct in [("high", alloc.get("high_risk_pct", 0.30)), 
+                                   ("moderate", alloc.get("moderate_risk_pct", 0.40)), 
+                                   ("low", alloc.get("low_risk_pct", 0.30))]:
                 
-                if slots_available <= 0:
+                # Check if we still have portfolio slots
+                active_positions_count = len(active_trades)
+                if active_positions_count >= max_positions:
+                    logger.info("Portfolio reached max position limit. Stopping scan.")
                     break
                 
-                logger.info(f"Evaluating candidate {symbol}...")
-
-                # A. Earnings Shield Check
-                passed_shield, reason = news_agent.check_earnings_shield(symbol)
-                if not passed_shield:
-                    logger.info(f"Skipping {symbol}: Earnings shield active ({reason})")
+                slots_available = max_positions - active_positions_count
+                
+                # Calculate available capital for this tier
+                target_tier_cap = net_liq * tier_pct
+                deployed_tier_cap = sum(details.get("initial_capital", 0.0) 
+                                        for details in active_trades.values() 
+                                        if details.get("risk_tier", "moderate") == tier)
+                available_tier_cap = target_tier_cap - deployed_tier_cap
+                
+                if available_tier_cap <= 0:
+                    logger.info(f"No available capital for '{tier}' risk tier (Target: ${target_tier_cap:,.2f}, Deployed: ${deployed_tier_cap:,.2f}). Skipping.")
                     continue
-
-                # B. News Sentiment Check
-                news_analysis = news_agent.analyze_news(symbol)
-                logger.info(f"News Verdict for {symbol}: {news_analysis['verdict']} | Score: {news_analysis['sentiment_score']}/10")
-                if news_analysis["verdict"] == "NEGATIVE":
-                    logger.info(f"Skipping {symbol}: Negative news sentiment.")
-                    continue
-
-                # C. Technical Analysis Check
-                tech_analysis = tech_agent.analyze(symbol, cand)
-                logger.info(f"Technical Verdict for {symbol}: {tech_analysis['verdict']} | Score: {tech_analysis['score']}/10")
-                if tech_analysis["verdict"] != "BULLISH":
-                    logger.info(f"Skipping {symbol}: Technical setup not bullish.")
-                    continue
-
-                # D. Fundamental Analysis Check
-                fund_analysis = fund_agent.analyze(symbol)
-                logger.info(f"Fundamental Verdict for {symbol}: {fund_analysis['verdict']} | Score: {fund_analysis['score']}/10")
-                if fund_analysis["verdict"] == "UNFAVORABLE":
-                    logger.info(f"Skipping {symbol}: Unfavorable fundamentals.")
-                    continue
-
-                # E. Position Sizing & Entry Execution
-                sizing = risk_agent.calculate_position_size(
-                    portfolio_value=net_liq,
-                    entry_price=cand["close"],
-                    atr=cand["atr"]
-                )
-
-                qty = sizing["quantity"]
-                if qty <= 0:
-                    logger.warning(f"Sizing calculation returned quantity 0 for {symbol}. Skipping.")
-                    continue
-
-                logger.info(f"Candidate {symbol} passed all filters. Buying {qty} shares (Capital Required: ${sizing['capital_required']:.2f}, Stop Loss: ${sizing['stop_loss_price']:.2f})")
-
-                # Execute Bracket Buy Order
-                order_id = await broker.execute_buy(symbol, qty, sizing["stop_loss_price"])
-                if order_id:
-                    active_trades[symbol] = {
-                        "entry_price": cand["close"],
-                        "stop_loss_price": sizing["stop_loss_price"],
-                        "quantity": qty,
-                        "initial_capital": sizing["capital_required"],
-                        "purchased_at": datetime.now().isoformat(),
-                        "order_id": order_id
-                    }
-                    slots_available -= 1
+                
+                logger.info(f"Scanning for '{tier}' risk candidates with available capital: ${available_tier_cap:,.2f}...")
+                
+                candidates = scanner.scan_tier(tier)
+                
+                for cand in candidates:
+                    symbol = cand["symbol"]
+                    if symbol in active_trades:
+                        continue  # Already in portfolio
+                    
+                    if slots_available <= 0:
+                        break
+                    
+                    logger.info(f"Evaluating candidate {symbol} for '{tier}' risk tier...")
+    
+                    # A. Earnings Shield Check
+                    passed_shield, reason = news_agent.check_earnings_shield(symbol)
+                    if not passed_shield:
+                        logger.info(f"Skipping {symbol}: Earnings shield active ({reason})")
+                        continue
+    
+                    # B. News Sentiment Check
+                    news_analysis = news_agent.analyze_news(symbol)
+                    logger.info(f"News Verdict for {symbol}: {news_analysis['verdict']} | Score: {news_analysis['sentiment_score']}/10")
+                    if news_analysis["verdict"] == "NEGATIVE":
+                        logger.info(f"Skipping {symbol}: Negative news sentiment.")
+                        continue
+    
+                    # C. Technical Analysis Check
+                    tech_analysis = tech_agent.analyze(symbol, cand)
+                    logger.info(f"Technical Verdict for {symbol}: {tech_analysis['verdict']} | Score: {tech_analysis['score']}/10")
+                    if tech_analysis["verdict"] != "BULLISH":
+                        logger.info(f"Skipping {symbol}: Technical setup not bullish.")
+                        continue
+    
+                    # D. Fundamental Analysis Check
+                    fund_analysis = fund_agent.analyze(symbol)
+                    logger.info(f"Fundamental Verdict for {symbol}: {fund_analysis['verdict']} | Score: {fund_analysis['score']}/10")
+                    if fund_analysis["verdict"] == "UNFAVORABLE":
+                        logger.info(f"Skipping {symbol}: Unfavorable fundamentals.")
+                        continue
+    
+                    # E. Position Sizing & Entry Execution
+                    sizing = risk_agent.calculate_position_size(
+                        portfolio_value=net_liq,
+                        entry_price=cand["close"],
+                        atr=cand["atr"],
+                        available_tier_capital=available_tier_cap
+                    )
+    
+                    qty = sizing["quantity"]
+                    if qty <= 0:
+                        logger.warning(f"Sizing calculation returned quantity 0 for {symbol}. Skipping.")
+                        continue
+    
+                    logger.info(f"Candidate {symbol} passed all filters. Buying {qty} shares (Capital Required: ${sizing['capital_required']:.2f}, Stop Loss: ${sizing['stop_loss_price']:.2f})")
+    
+                    # Execute Bracket Buy Order
+                    order_id = await broker.execute_buy(symbol, qty, sizing["stop_loss_price"])
+                    if order_id:
+                        active_trades[symbol] = {
+                            "entry_price": cand["close"],
+                            "stop_loss_price": sizing["stop_loss_price"],
+                            "quantity": qty,
+                            "initial_capital": sizing["capital_required"],
+                            "purchased_at": datetime.now().isoformat(),
+                            "order_id": order_id,
+                            "risk_tier": tier  # Tracked risk tier
+                        }
+                        slots_available -= 1
+                        available_tier_cap -= sizing["capital_required"]
 
             # Save state after scans and executions
             state["active_trades"] = active_trades
