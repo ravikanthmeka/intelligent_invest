@@ -117,6 +117,22 @@ st.markdown("""
         color: #71717a;
         white-space: pre-wrap;
     }
+    
+    /* Form Submit Button Styling */
+    div[data-testid="stFormSubmitButton"] button {
+        background-color: #2563eb !important;
+        color: #ffffff !important;
+        border: 1px solid #3b82f6 !important;
+        font-weight: 600 !important;
+        padding: 0.5rem 1.5rem !important;
+        border-radius: 6px !important;
+        cursor: pointer !important;
+    }
+    div[data-testid="stFormSubmitButton"] button:hover {
+        background-color: #1d4ed8 !important;
+        color: #ffffff !important;
+        border-color: #2563eb !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
