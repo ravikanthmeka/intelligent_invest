@@ -23,7 +23,7 @@ class BrokerAgent:
         for attempt in range(1, 4):
             try:
                 logger.info(f"Connecting to IB Gateway at {self.host}:{self.port} (Attempt {attempt})...")
-                await self.ib.connectAsync(self.host, self.port, clientId=self.client_id)
+                await self.ib.connectAsync(self.host, self.port, clientId=self.client_id, timeout=15)
                 self.connected = True
                 logger.info("Successfully connected to IB Gateway.")
                 return True

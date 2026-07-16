@@ -15,5 +15,6 @@ services:
       - TRADING_MODE=${IBKR_TRADING_MODE:-paper}
       - READ_ONLY_API=no
       - VNC_PASSWORD=${IBKR_VNC_PASSWORD:-secretvnc}
+      - EXISTING_SESSION_DETECTED_ACTION=primary
     volumes:
       - ./infrastructure/config.ini.tmpl:/home/ibgateway/ibc/config.ini.tmpl
