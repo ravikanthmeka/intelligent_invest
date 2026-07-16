@@ -19,7 +19,7 @@ class LLMClient:
             # Bedrock client loads credentials from the environment / IAM role
             self.bedrock_client = boto3.client(
                 service_name="bedrock-runtime",
-                region_name=os.getenv("AWS_REGION", "us-east-1")
+                region_name=os.getenv("AWS_REGION") or "us-east-1"
             )
             # Default Bedrock model if not specified
             if not self.model:

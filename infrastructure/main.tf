@@ -17,7 +17,8 @@ resource "aws_instance" "trading_instance" {
 
   # Bootstrapping script
   user_data = templatefile("${path.module}/templates/userdata.sh", {
-    repo_url = var.repo_url
+    repo_url   = var.repo_url
+    aws_region = var.aws_region
   })
 
   root_block_device {

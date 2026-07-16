@@ -34,7 +34,7 @@ cd "$APP_DIR"
 # 3. Resolve Environment Variables from SSM Parameter Store
 # (If parameters don't exist yet, it will create empty values in .env)
 echo "Resolving credentials from SSM Parameter Store..."
-aws_region=$(curl -s http://169.254.169.254/latest/meta-data/placement/region || echo "us-east-1")
+aws_region="${aws_region}"
 
 get_ssm_param() {
   local param_name=$1

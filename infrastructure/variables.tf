@@ -24,6 +24,6 @@ variable "instance_type" {
 
 variable "repo_url" {
   type        = string
-  default     = "https://github.com/your-username/intelligent_invest.git"
+  default     = "https://github.com/ravikanthmeka/intelligent_invest.git"
   description = "The Git repository URL of your trading system"
 }

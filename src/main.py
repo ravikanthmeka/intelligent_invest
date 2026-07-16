@@ -4,6 +4,7 @@ import yaml
 import json
 import asyncio
 import logging
+import yfinance as yf
 from datetime import datetime
 from typing import Dict, Any
 from dotenv import load_dotenv
