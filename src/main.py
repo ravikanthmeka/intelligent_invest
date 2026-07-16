@@ -64,7 +64,10 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
     risk_agent = RiskAgent(
         max_positions=config.get("risk", {}).get("max_positions", 5),
         max_cap_pct=config.get("risk", {}).get("max_capital_pct", 0.20),
-        risk_pct=config.get("risk", {}).get("risk_per_trade_pct", 0.01)
+        risk_pct=config.get("risk", {}).get("risk_per_trade_pct", 0.01),
+        min_stop_loss_pct=config.get("risk", {}).get("min_stop_loss_pct", 0.05),
+        max_stop_loss_pct=config.get("risk", {}).get("max_stop_loss_pct", 0.07),
+        trail_trigger_pct=config.get("risk", {}).get("trail_trigger_pct", 0.03)
     )
     
     pm = PortfolioManagerAgent(
@@ -138,7 +141,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
 
             # Check if profit threshold reached to evaluate winner momentum
             momentum_is_strong = False
-            if return_pct >= 0.03: # 3% return threshold
+            if return_pct >= risk_agent.trail_trigger_pct: # Dynamic return threshold
                 logger.info(f"{symbol} has gained {return_pct*100:.1f}%. Checking momentum...")
                 momentum_is_strong = pm.evaluate_winner_momentum(symbol, current_price, atr)
                 logger.info(f"Momentum evaluation result for {symbol}: {'STRONG' if momentum_is_strong else 'WEAK'}")

@@ -3,7 +3,28 @@ import json
 import pandas as pd
 import yfinance as yf
 import streamlit as st
+import yaml
 from datetime import datetime
+
+CONFIG_FILE = "config.yaml"
+
+def load_config():
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                return yaml.safe_load(f)
+        except Exception as e:
+            st.error(f"Error loading config file: {e}")
+    return {}
+
+def save_config(new_config):
+    try:
+        with open(CONFIG_FILE, "w") as f:
+            yaml.safe_dump(new_config, f, default_flow_style=False, sort_keys=False)
+        return True
+    except Exception as e:
+        st.error(f"Error saving config file: {e}")
+        return False
 
 # Page Configuration
 st.set_page_config(
@@ -185,7 +206,7 @@ with col4:
     """, unsafe_allow_html=True)
 
 # Layout: Main Body
-tab1, tab2 = st.tabs(["📊 Active Positions", "📜 System Logs"])
+tab1, tab2, tab3 = st.tabs(["📊 Active Positions", "📜 System Logs", "⚙️ settings & Risk Rules"])
 
 with tab1:
     st.write("### Portfolio Breakdown")
@@ -205,6 +226,59 @@ with tab2:
     st.markdown(f"""
     <pre class="log-container">{log_text}</pre>
     """, unsafe_allow_html=True)
+
+with tab3:
+    st.write("### Configure Trading & Risk Rules")
+    cfg = load_config()
+    if cfg:
+        with st.form("config_form"):
+            st.write("#### General Settings")
+            dry_run = st.toggle("Dry Run Mode", value=cfg.get("trading", {}).get("dry_run", True),
+                                help="In Dry Run mode, system analyzes candidates and simulates orders without placing them at the broker.")
+            
+            st.write("#### Risk & Sizing Rules")
+            col_risk1, col_risk2 = st.columns(2)
+            with col_risk1:
+                max_positions = st.number_input("Max Open Positions", min_value=1, max_value=20, step=1,
+                                                value=int(cfg.get("risk", {}).get("max_positions", 5)))
+                max_capital_pct = st.slider("Max Capital Per Position (%)", min_value=5, max_value=50, 
+                                            value=int(cfg.get("risk", {}).get("max_capital_pct", 0.20) * 100)) / 100.0
+                risk_per_trade_pct = st.slider("Portfolio Risk Per Trade (%)", min_value=0.1, max_value=5.0, step=0.1,
+                                                value=float(cfg.get("risk", {}).get("risk_per_trade_pct", 0.01) * 100)) / 100.0
+            with col_risk2:
+                min_stop_loss_pct = st.slider("Minimum Stop Loss Distance (%)", min_value=1.0, max_value=15.0, step=0.5,
+                                              value=float(cfg.get("risk", {}).get("min_stop_loss_pct", 0.05) * 100)) / 100.0
+                max_stop_loss_pct = st.slider("Maximum Stop Loss Distance (%)", min_value=1.0, max_value=25.0, step=0.5,
+                                              value=float(cfg.get("risk", {}).get("max_stop_loss_pct", 0.07) * 100)) / 100.0
+                trail_trigger_pct = st.slider("Trailing Stop Trigger Threshold (%)", min_value=1.0, max_value=20.0, step=0.5,
+                                              value=float(cfg.get("risk", {}).get("trail_trigger_pct", 0.03) * 100)) / 100.0
+
+            st.write("#### Watchlist Tickers")
+            current_watchlist = ", ".join(cfg.get("watchlist", []))
+            watchlist_text = st.text_area("Watchlist (comma-separated tickers)", value=current_watchlist, 
+                                          help="Enter ticker symbols separated by commas (e.g. AAPL, MSFT, NVDA).")
+            
+            submit_btn = st.form_submit_button("Save Configuration & Rules")
+            if submit_btn:
+                if "trading" not in cfg:
+                    cfg["trading"] = {}
+                cfg["trading"]["dry_run"] = dry_run
+                
+                if "risk" not in cfg:
+                    cfg["risk"] = {}
+                cfg["risk"]["max_positions"] = max_positions
+                cfg["risk"]["max_capital_pct"] = max_capital_pct
+                cfg["risk"]["risk_per_trade_pct"] = risk_per_trade_pct
+                cfg["risk"]["min_stop_loss_pct"] = min_stop_loss_pct
+                cfg["risk"]["max_stop_loss_pct"] = max_stop_loss_pct
+                cfg["risk"]["trail_trigger_pct"] = trail_trigger_pct
+                
+                watchlist_list = [t.strip().upper() for t in watchlist_text.split(",") if t.strip()]
+                cfg["watchlist"] = watchlist_list
+                
+                if save_config(cfg):
+                    st.success("Configuration saved successfully! The next trading cycle will use these settings.")
+                    st.rerun()
 
 # Auto Refresh UI Checkbox
 st.sidebar.write("### Refresh Controls")

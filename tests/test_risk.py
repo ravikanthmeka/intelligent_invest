@@ -132,5 +132,49 @@ class TestRiskAgent(unittest.TestCase):
         self.assertEqual(decision["action"], "SELL")
         self.assertIn("Target return hit with weakening momentum", decision["rationale"])
 
+    def test_position_sizing_dynamic_bounds(self):
+        """
+        Verify position sizing respects dynamic min/max stop-loss percentages.
+        Set min_stop_loss_pct to 10% and max_stop_loss_pct to 15%.
+        At ATR = 2.0, default stop loss is $94.0 (6% stop loss).
+        This should be bounded by min_stop_loss_pct (10%) to $90.0.
+        """
+        dynamic_agent = RiskAgent(
+            max_positions=5, max_cap_pct=0.20, risk_pct=0.01,
+            min_stop_loss_pct=0.10, max_stop_loss_pct=0.15
+        )
+        portfolio_val = 100000.0
+        entry_price = 100.0
+        atr = 2.0
+        
+        sizing = dynamic_agent.calculate_position_size(portfolio_val, entry_price, atr)
+        
+        # Stop loss should be forced to 10% -> 90.0
+        self.assertEqual(sizing["stop_loss_price"], 90.0)
+        self.assertEqual(sizing["quantity"], 100) # $1000 risk / $10 risk distance = 100 shares
+
+    def test_evaluate_active_position_dynamic_trail_trigger(self):
+        """
+        Verify active position evaluation respects dynamic trail trigger thresholds.
+        Set trail_trigger_pct to 10%.
+        At return of 5% (current: $105, entry: $100), it should hold and not raise stop
+        since return is below the 10% threshold.
+        """
+        dynamic_agent = RiskAgent(
+            max_positions=5, max_cap_pct=0.20, risk_pct=0.01,
+            trail_trigger_pct=0.10
+        )
+        decision = dynamic_agent.evaluate_active_position(
+            symbol="AAPL",
+            entry_price=100.0,
+            current_price=105.0,
+            current_stop=94.0,
+            atr=2.0,
+            momentum_is_strong=True
+        )
+        # return of 5% is less than 10% trigger, so action must be HOLD and stop loss unchanged
+        self.assertEqual(decision["action"], "HOLD")
+        self.assertEqual(decision["new_stop"], 94.0)
+
 if __name__ == "__main__":
     unittest.main()

@@ -2,24 +2,28 @@ from typing import Dict, Any
 from src.skills.base import Skill
 
 class CalculatePositionSizeSkill(Skill):
-    def __init__(self, max_cap_pct: float = 0.20, risk_pct: float = 0.01):
+    def __init__(self, max_cap_pct: float = 0.20, risk_pct: float = 0.01, min_stop_loss_pct: float = 0.05, max_stop_loss_pct: float = 0.07):
         super().__init__(
             name="CalculatePositionSize",
             description="Calculates position quantity and stop-loss price based on portfolio value, entry price, ATR, and risk rules."
         )
         self.max_cap_pct = max_cap_pct
         self.risk_pct = risk_pct
+        self.min_stop_loss_pct = min_stop_loss_pct
+        self.max_stop_loss_pct = max_stop_loss_pct
 
-    def execute(self, portfolio_value: float, entry_price: float, atr: float, risk_pct: float = None, max_cap_pct: float = None) -> Dict[str, Any]:
+    def execute(self, portfolio_value: float, entry_price: float, atr: float, risk_pct: float = None, max_cap_pct: float = None, min_stop_loss_pct: float = None, max_stop_loss_pct: float = None) -> Dict[str, Any]:
         r_pct = risk_pct if risk_pct is not None else self.risk_pct
         c_pct = max_cap_pct if max_cap_pct is not None else self.max_cap_pct
+        min_sl = min_stop_loss_pct if min_stop_loss_pct is not None else self.min_stop_loss_pct
+        max_sl = max_stop_loss_pct if max_stop_loss_pct is not None else self.max_stop_loss_pct
 
         # Initial stop-loss: 3 * ATR
         atr_stop = entry_price - (3 * atr)
         
-        # Bounded between 5% and 7% stop loss away from entry to avoid noise and protect capital
-        stop_loss_price = max(atr_stop, entry_price * 0.93) # looser bound (7% max risk distance)
-        stop_loss_price = min(stop_loss_price, entry_price * 0.95) # tighter bound (5% min risk distance)
+        # Bounded between min_sl and max_sl stop loss away from entry to avoid noise and protect capital
+        stop_loss_price = max(atr_stop, entry_price * (1.0 - max_sl))
+        stop_loss_price = min(stop_loss_price, entry_price * (1.0 - min_sl))
 
         # Risk amount
         max_risk_amount = portfolio_value * r_pct
@@ -45,14 +49,16 @@ class CalculatePositionSizeSkill(Skill):
         }
 
 class EvaluateActivePositionSkill(Skill):
-    def __init__(self):
+    def __init__(self, trail_trigger_pct: float = 0.03):
         super().__init__(
             name="EvaluateActivePosition",
             description="Evaluates active position performance to determine if trailing stop-loss should be raised or if position should be sold."
         )
+        self.trail_trigger_pct = trail_trigger_pct
 
-    def execute(self, symbol: str, entry_price: float, current_price: float, current_stop: float, atr: float, momentum_is_strong: bool) -> Dict[str, Any]:
+    def execute(self, symbol: str, entry_price: float, current_price: float, current_stop: float, atr: float, momentum_is_strong: bool, trail_trigger_pct: float = None) -> Dict[str, Any]:
         return_pct = (current_price - entry_price) / entry_price
+        trigger_pct = trail_trigger_pct if trail_trigger_pct is not None else self.trail_trigger_pct
         
         verdict = "HOLD"
         new_stop = current_stop
@@ -62,8 +68,8 @@ class EvaluateActivePositionSkill(Skill):
         if current_price <= current_stop:
             return {"action": "SELL", "new_stop": 0.0, "rationale": f"Stop loss triggered at ${current_stop:.2f}"}
 
-        # Dynamic stop adjustment after 3% return
-        if return_pct >= 0.03:
+        # Dynamic stop adjustment after trigger threshold return
+        if return_pct >= trigger_pct:
             if momentum_is_strong:
                 # Lock in profits by moving stop loss up to entry (breakeven) or trailing by 2 * ATR
                 potential_stop = current_price - (2 * atr)
