@@ -4,6 +4,8 @@ import pandas as pd
 import yfinance as yf
 import streamlit as st
 import yaml
+import subprocess
+import platform
 from datetime import datetime
 
 CONFIG_FILE = "config.yaml"
@@ -25,6 +27,35 @@ def save_config(new_config):
     except Exception as e:
         st.error(f"Error saving config file: {e}")
         return False
+
+def update_systemd_timer(interval_minutes: int):
+    if platform.system() != "Linux":
+        return
+        
+    on_calendar = "Mon-Fri *-*-* 09,10,11,12,13,14,15:00,30:00"
+    if interval_minutes == 15:
+        on_calendar = "Mon-Fri *-*-* 09,10,11,12,13,14,15:00,15,30,45:00"
+    elif interval_minutes == 60:
+        on_calendar = "Mon-Fri *-*-* 09,10,11,12,13,14,15:00:00"
+        
+    timer_content = f"""[Unit]
+Description=Run Intelligent Invest Trading Cycle every {interval_minutes} minutes during trading hours
+
+[Timer]
+OnCalendar={on_calendar}
+Unit=trading-agent.service
+
+[Install]
+WantedBy=timers.target
+"""
+    try:
+        timer_path = "/etc/systemd/system/trading-agent.timer"
+        with open(timer_path, "w") as f:
+            f.write(timer_content)
+        subprocess.run(["systemctl", "daemon-reload"], check=True)
+        subprocess.run(["systemctl", "restart", "trading-agent.timer"], check=True)
+    except Exception as e:
+        st.error(f"Failed to update systemd timer: {e}")
 
 # Page Configuration
 st.set_page_config(
@@ -275,8 +306,14 @@ with tab3:
     if cfg:
         with st.form("config_form"):
             st.write("#### General Settings")
-            dry_run = st.toggle("Dry Run Mode", value=cfg.get("trading", {}).get("dry_run", True),
-                                help="In Dry Run mode, system analyzes candidates and simulates orders without placing them at the broker.")
+            col_gen1, col_gen2 = st.columns(2)
+            with col_gen1:
+                dry_run = st.toggle("Dry Run Mode", value=cfg.get("trading", {}).get("dry_run", True),
+                                    help="In Dry Run mode, system analyzes candidates and simulates orders without placing them at the broker.")
+            with col_gen2:
+                interval_minutes = st.selectbox("Execution Interval (Minutes)", options=[15, 30, 60],
+                                                index=[15, 30, 60].index(cfg.get("scheduler", {}).get("interval_minutes", 30)),
+                                                help="How frequently the trading agent executes scans and evaluations during market hours.")
             
             st.write("#### Risk & Sizing Rules")
             col_risk1, col_risk2 = st.columns(2)
@@ -341,10 +378,16 @@ with tab3:
                     cfg["allocation"]["moderate_risk_pct"] = mod_risk_pct_input / 100.0
                     cfg["allocation"]["low_risk_pct"] = low_risk_pct_input / 100.0
                     
+                    if "scheduler" not in cfg:
+                        cfg["scheduler"] = {}
+                    cfg["scheduler"]["interval_minutes"] = interval_minutes
+                    
                     watchlist_list = [t.strip().upper() for t in watchlist_text.split(",") if t.strip()]
                     cfg["watchlist"] = watchlist_list
                     
                     if save_config(cfg):
+                        # Update systemd timer on EC2 host if running on Linux
+                        update_systemd_timer(interval_minutes)
                         st.success("Configuration saved successfully! The next trading cycle will use these settings.")
                         st.rerun()
 

@@ -46,3 +46,6 @@ watchlist:
   - "NFLX"
   - "ORCL"
   - "CSCO"
+
+scheduler:
+  interval_minutes: 30
