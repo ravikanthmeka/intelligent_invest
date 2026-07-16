@@ -13,7 +13,6 @@ services:
       - TWS_USERID=${IBKR_USERID:-edemo}
       - TWS_PASSWORD=${IBKR_PASSWORD:-demouser}
       - TRADING_MODE=${IBKR_TRADING_MODE:-paper}
-      - API_PORT=4002
       - READ_ONLY_API=no
       - VNC_PASSWORD=${IBKR_VNC_PASSWORD:-secretvnc}
     volumes:
