@@ -315,6 +315,20 @@ with tab3:
                                                 index=[15, 30, 60].index(cfg.get("scheduler", {}).get("interval_minutes", 30)),
                                                 help="How frequently the trading agent executes scans and evaluations during market hours.")
             
+            st.write("#### Broker Gateway Settings")
+            col_broker1, col_broker2, col_broker3 = st.columns(3)
+            with col_broker1:
+                broker_host = st.text_input("Broker Host", value=cfg.get("broker", {}).get("host", "127.0.0.1"),
+                                            help="IP address of the IB Gateway or TWS workstation.")
+            with col_broker2:
+                broker_port = st.number_input("Broker Port", min_value=1, max_value=65535, step=1,
+                                              value=int(cfg.get("broker", {}).get("port", 4002)),
+                                              help="API port: 4002 for paper trading, 4001 for live trading.")
+            with col_broker3:
+                broker_client_id = st.number_input("Broker Client ID", min_value=0, max_value=999, step=1,
+                                                   value=int(cfg.get("broker", {}).get("client_id", 88)),
+                                                   help="Unique client connection ID for IB Gateway API.")
+            
             st.write("#### Risk & Sizing Rules")
             col_risk1, col_risk2 = st.columns(2)
             with col_risk1:
@@ -381,6 +395,12 @@ with tab3:
                     if "scheduler" not in cfg:
                         cfg["scheduler"] = {}
                     cfg["scheduler"]["interval_minutes"] = interval_minutes
+                    
+                    if "broker" not in cfg:
+                        cfg["broker"] = {}
+                    cfg["broker"]["host"] = broker_host
+                    cfg["broker"]["port"] = broker_port
+                    cfg["broker"]["client_id"] = broker_client_id
                     
                     watchlist_list = [t.strip().upper() for t in watchlist_text.split(",") if t.strip()]
                     cfg["watchlist"] = watchlist_list
