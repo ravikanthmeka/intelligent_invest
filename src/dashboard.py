@@ -807,8 +807,12 @@ with tab_manual:
                 
             force_buy = st.checkbox("Force override screening filters and purchase anyway", value=False)
             
+            custom_qty = 1
+            if force_buy:
+                custom_qty = st.number_input("Custom Purchase Quantity (Shares)", min_value=1, max_value=100, value=1, step=1)
+            
             if eligible or force_buy:
-                if st.button(f"Execute Sized Buy Order for {manual_ticker}"):
+                if st.button(f"Execute Buy Order for {manual_ticker}"):
                     with st.spinner("Connecting to broker and executing bracket order..."):
                         try:
                             import asyncio
@@ -846,12 +850,17 @@ with tab_manual:
                             )
                             
                             qty = sizing["quantity"]
+                            if force_buy:
+                                qty = int(custom_qty)
+                                
+                            stop_loss_val = sizing.get("stop_loss_price", cand_data["close"] * 0.95)
+                            
                             if qty <= 0:
                                 st.error("Sizing returned 0 quantity. Insufficient allocated capital in this risk tier.")
                             else:
                                 async def place_order():
                                     await broker.connect()
-                                    order_id = await broker.execute_buy(manual_ticker, qty, sizing["stop_loss_price"])
+                                    order_id = await broker.execute_buy(manual_ticker, qty, stop_loss_val)
                                     await broker.disconnect()
                                     return order_id
                                     
