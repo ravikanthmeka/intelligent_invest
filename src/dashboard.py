@@ -1158,6 +1158,21 @@ if st.sidebar.button("🔌 Reconnect Broker & Trigger 2FA"):
         except Exception as e:
             st.sidebar.error(f"Failed to restart gateway: {e}")
 
+st.sidebar.write("### Agent Control")
+if st.sidebar.button("🚀 Run Trading Cycle Now"):
+    with st.spinner("Executing live trading cycle scan and evaluation..."):
+        try:
+            python_bin = sys.executable
+            main_py_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "main.py")
+            result = subprocess.run([python_bin, main_py_path], capture_output=True, text=True, check=False)
+            if result.returncode == 0:
+                st.sidebar.success("Trading cycle completed successfully!")
+                st.rerun()
+            else:
+                st.sidebar.error(f"Cycle failed: {result.stderr or result.stdout}")
+        except Exception as e:
+            st.sidebar.error(f"Failed to execute trading cycle: {e}")
+
 # Auto Refresh UI Checkbox
 st.sidebar.write("### Refresh Controls")
 if st.sidebar.button("🔄 Refresh Data"):
