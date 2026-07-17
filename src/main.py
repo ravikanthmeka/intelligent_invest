@@ -339,6 +339,13 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                     fund_verd = None
                     status = "Passed"
                     
+                    is_growth_reinvestment_play = False
+                    rnd_intensity_pct = 0.0
+                    revenue_growth_pct = 0.0
+                    net_margin_pct = 0.0
+                    growth_score = None
+                    growth_verd = None
+                    
                     # A. Earnings Shield Check
                     passed_shield, reason = news_agent.check_earnings_shield(symbol, days_range=earnings_days)
                     if not passed_shield:
@@ -370,13 +377,6 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                                 fund_score = fund_analysis.get("score", 5.0)
                                 fund_verd = fund_analysis.get("verdict", "NEUTRAL")
                                 logger.info(f"Fundamental Verdict for {symbol}: {fund_verd} | Score: {fund_score}/10")
-                                
-                                is_growth_reinvestment_play = False
-                                rnd_intensity_pct = 0.0
-                                revenue_growth_pct = 0.0
-                                net_margin_pct = 0.0
-                                growth_score = None
-                                growth_verd = None
                                 
                                 if fund_verd == "UNFAVORABLE" or fund_score < min_fund:
                                     # Traditional fundamentals failed. Check if this is a valid Growth/R&D play for High/Moderate risk tiers
