@@ -1,11 +1,19 @@
 import json
 import logging
 import yfinance as yf
+import yaml
 from typing import Dict, Any, List
 from src.llm import LLMClient
 from src.skills.base import Skill
 
 logger = logging.getLogger("AnalysisSkills")
+
+def load_config() -> Dict[str, Any]:
+    try:
+        with open("config.yaml", "r") as f:
+            return yaml.safe_load(f) or {}
+    except Exception:
+        return {}
 
 class TechnicalAnalysisSkill(Skill):
     def __init__(self, llm: LLMClient):
@@ -17,14 +25,18 @@ class TechnicalAnalysisSkill(Skill):
 
     def execute(self, symbol: str, data: Dict[str, Any], learnings_feedback: str = "") -> Dict[str, Any]:
         learnings_str = f"\nPortfolio learnings from past trades:\n{learnings_feedback}\n" if learnings_feedback else ""
-        prompt = f"""
-        Analyze the following technical indicator profile for stock ticker '{symbol}':
-        - Current Price: ${data['close']:.2f}
-        - 14-day RSI: {data['rsi']:.1f}
-        - 50-day Simple Moving Average (SMA): ${data['sma_50']:.2f}
-        - 200-day Simple Moving Average (SMA): ${data['sma_200']:.2f}
-        - 14-day Average True Range (ATR): ${data['atr']:.2f}
-        - Volume Spike Detected: {data['volume_spike']}
+        
+        config = load_config()
+        prompt_cfg = config.get("prompts", {}).get("technical_analysis", {})
+        system_prompt = prompt_cfg.get("system_prompt", "You are a professional quantitative technical analyst.")
+        
+        default_template = """Analyze the following technical indicator profile for stock ticker '{symbol}':
+        - Current Price: ${close:.2f}
+        - 14-day RSI: {rsi:.1f}
+        - 50-day Simple Moving Average (SMA): ${sma_50:.2f}
+        - 200-day Simple Moving Average (SMA): ${sma_200:.2f}
+        - 14-day Average True Range (ATR): ${atr:.2f}
+        - Volume Spike Detected: {volume_spike}
         {learnings_str}
         Provide a verdict. You must respond in a valid JSON structure:
         {{
@@ -32,10 +44,36 @@ class TechnicalAnalysisSkill(Skill):
             "score": float (0.0 to 10.0),
             "rationale": "Short analysis of indicators, support levels, and momentum."
         }}
-        Do not add any markup or markdown wraps besides the raw JSON.
-        """
+        Do not add any markup or markdown wraps besides the raw JSON."""
+        
+        template = prompt_cfg.get("user_prompt_template", default_template)
+        
         try:
-            response_text = self.llm.call(prompt, system_prompt="You are a professional quantitative technical analyst.")
+            prompt = template.format(
+                symbol=symbol,
+                close=data['close'],
+                rsi=data['rsi'],
+                sma_50=data['sma_50'],
+                sma_200=data['sma_200'],
+                atr=data['atr'],
+                volume_spike=data['volume_spike'],
+                learnings_str=learnings_str
+            )
+        except Exception as e:
+            logger.error(f"Failed to format technical analysis prompt template: {e}. Falling back to default.")
+            prompt = default_template.format(
+                symbol=symbol,
+                close=data['close'],
+                rsi=data['rsi'],
+                sma_50=data['sma_50'],
+                sma_200=data['sma_200'],
+                atr=data['atr'],
+                volume_spike=data['volume_spike'],
+                learnings_str=learnings_str
+            )
+            
+        try:
+            response_text = self.llm.call(prompt, system_prompt=system_prompt)
             clean_text = response_text.replace("```json", "").replace("```", "").strip()
             return json.loads(clean_text)
         except Exception as e:
@@ -64,8 +102,12 @@ class FundamentalAnalysisSkill(Skill):
             fcf = info.get("freeCashflow", "N/A")
 
             learnings_str = f"\nPortfolio learnings from past trades:\n{learnings_feedback}\n" if learnings_feedback else ""
-            prompt = f"""
-            Evaluate the financial fundamentals of company ticker '{symbol}':
+            
+            config = load_config()
+            prompt_cfg = config.get("prompts", {}).get("fundamental_analysis", {})
+            system_prompt = prompt_cfg.get("system_prompt", "You are an experienced equity research analyst.")
+            
+            default_template = """Evaluate the financial fundamentals of company ticker '{symbol}':
             - Trailing P/E: {pe_ratio}
             - Forward P/E: {forward_pe}
             - PEG Ratio: {peg_ratio}
@@ -81,9 +123,37 @@ class FundamentalAnalysisSkill(Skill):
                 "score": float (0.0 to 10.0),
                 "rationale": "Brief critique of valuation, debt burden, and growth profile."
             }}
-            Do not add any markup or markdown wraps besides the raw JSON.
-            """
-            response_text = self.llm.call(prompt, system_prompt="You are an experienced equity research analyst.")
+            Do not add any markup or markdown wraps besides the raw JSON."""
+            
+            template = prompt_cfg.get("user_prompt_template", default_template)
+            
+            try:
+                prompt = template.format(
+                    symbol=symbol,
+                    pe_ratio=pe_ratio,
+                    forward_pe=forward_pe,
+                    peg_ratio=peg_ratio,
+                    debt_to_equity=debt_to_equity,
+                    rev_growth=rev_growth,
+                    margin=margin,
+                    fcf=fcf,
+                    learnings_str=learnings_str
+                )
+            except Exception as e:
+                logger.error(f"Failed to format fundamental analysis prompt template: {e}. Falling back.")
+                prompt = default_template.format(
+                    symbol=symbol,
+                    pe_ratio=pe_ratio,
+                    forward_pe=forward_pe,
+                    peg_ratio=peg_ratio,
+                    debt_to_equity=debt_to_equity,
+                    rev_growth=rev_growth,
+                    margin=margin,
+                    fcf=fcf,
+                    learnings_str=learnings_str
+                )
+                
+            response_text = self.llm.call(prompt, system_prompt=system_prompt)
             clean_text = response_text.replace("```json", "").replace("```", "").strip()
             return json.loads(clean_text)
         except Exception as e:
@@ -110,8 +180,12 @@ class NewsSentimentSkill(Skill):
                 news_summary = "No recent news articles found."
 
             learnings_str = f"\nPortfolio learnings from past trades:\n{learnings_feedback}\n" if learnings_feedback else ""
-            prompt = f"""
-            Analyze the recent headlines for stock '{symbol}':
+            
+            config = load_config()
+            prompt_cfg = config.get("prompts", {}).get("news_sentiment", {})
+            system_prompt = prompt_cfg.get("system_prompt", "You are a financial news intelligence analyst.")
+            
+            default_template = """Analyze the recent headlines for stock '{symbol}':
             {news_summary}
             {learnings_str}
             Identify any negative/positive binary events (lawsuits, product recalls, FDA approvals, executive departures).
@@ -122,9 +196,25 @@ class NewsSentimentSkill(Skill):
                 "sentiment_score": float (0.0 to 10.0),
                 "rationale": "Brief summary of news landscape."
             }}
-            Do not add any markup or markdown wraps besides the raw JSON.
-            """
-            response_text = self.llm.call(prompt, system_prompt="You are a financial news intelligence analyst.")
+            Do not add any markup or markdown wraps besides the raw JSON."""
+            
+            template = prompt_cfg.get("user_prompt_template", default_template)
+            
+            try:
+                prompt = template.format(
+                    symbol=symbol,
+                    news_summary=news_summary,
+                    learnings_str=learnings_str
+                )
+            except Exception as e:
+                logger.error(f"Failed to format news sentiment prompt template: {e}. Falling back.")
+                prompt = default_template.format(
+                    symbol=symbol,
+                    news_summary=news_summary,
+                    learnings_str=learnings_str
+                )
+                
+            response_text = self.llm.call(prompt, system_prompt=system_prompt)
             clean_text = response_text.replace("```json", "").replace("```", "").strip()
             return json.loads(clean_text)
         except Exception as e:

@@ -395,7 +395,7 @@ def compile_learnings_feedback(state: Dict[str, Any]) -> str:
     return feedback
 
 # Layout: Main Body
-tab1, tab2, tab_candidates, tab3, tab4 = st.tabs(["📊 Active Positions", "📜 Trade Log & AI Learnings", "🔍 Candidate Analysis Log", "📁 System Logs", "⚙️ Settings & Risk Rules"])
+tab1, tab2, tab_candidates, tab_prompts, tab3, tab4 = st.tabs(["📊 Active Positions", "📜 Trade Log & AI Learnings", "🔍 Candidate Analysis Log", "🛠️ LLM Agent Prompts", "📁 System Logs", "⚙️ Settings & Risk Rules"])
 
 with tab1:
     st.write("### Portfolio Breakdown")
@@ -480,6 +480,110 @@ with tab_candidates:
             })
         df_evals = pd.DataFrame(rows)
         st.dataframe(df_evals, use_container_width=True)
+
+with tab_prompts:
+    st.write("### 🛠️ Refine LLM Agent Prompts & Skills")
+    st.markdown("Customize the instructions and formatting guidelines sent to the LLM-powered specialized analyst agents.")
+    
+    cfg_prompts = load_config()
+    prompts_section = cfg_prompts.get("prompts", {})
+    
+    with st.form("prompts_form"):
+        st.write("#### 1. Technical Analysis Agent Prompt")
+        tech_sys = st.text_area("System Prompt", 
+                                value=prompts_section.get("technical_analysis", {}).get("system_prompt", "You are a professional quantitative technical analyst."),
+                                key="tech_sys_prompt")
+        
+        default_tech_usr = """Analyze the following technical indicator profile for stock ticker '{symbol}':
+- Current Price: ${close:.2f}
+- 14-day RSI: {rsi:.1f}
+- 50-day Simple Moving Average (SMA): ${sma_50:.2f}
+- 200-day Simple Moving Average (SMA): ${sma_200:.2f}
+- 14-day Average True Range (ATR): ${atr:.2f}
+- Volume Spike Detected: {volume_spike}
+{learnings_str}
+Provide a verdict. You must respond in a valid JSON structure:
+{{
+    "verdict": "BULLISH" | "NEUTRAL" | "BEARISH",
+    "score": float (0.0 to 10.0),
+    "rationale": "Short analysis of indicators, support levels, and momentum."
+}}
+Do not add any markup or markdown wraps besides the raw JSON."""
+        tech_usr = st.text_area("User Prompt Template",
+                                value=prompts_section.get("technical_analysis", {}).get("user_prompt_template", default_tech_usr),
+                                height=250, key="tech_usr_prompt")
+        
+        st.write("#### 2. Fundamental Analysis Agent Prompt")
+        fund_sys = st.text_area("System Prompt",
+                                value=prompts_section.get("fundamental_analysis", {}).get("system_prompt", "You are an experienced equity research analyst."),
+                                key="fund_sys_prompt")
+        
+        default_fund_usr = """Evaluate the financial fundamentals of company ticker '{symbol}':
+- Trailing P/E: {pe_ratio}
+- Forward P/E: {forward_pe}
+- PEG Ratio: {peg_ratio}
+- Debt to Equity Ratio: {debt_to_equity}
+- Year-over-Year Revenue Growth: {rev_growth}
+- Profit Margin: {margin}
+- Free Cash Flow: {fcf}
+{learnings_str}
+Provide a fundamental strength score. Verify if company is financially healthy, has clean debt margins, and positive free cash flows.
+Respond in a valid JSON structure:
+{{
+    "verdict": "FAVORABLE" | "NEUTRAL" | "UNFAVORABLE",
+    "score": float (0.0 to 10.0),
+    "rationale": "Brief critique of valuation, debt burden, and growth profile."
+}}
+Do not add any markup or markdown wraps besides the raw JSON."""
+        fund_usr = st.text_area("User Prompt Template",
+                                value=prompts_section.get("fundamental_analysis", {}).get("user_prompt_template", default_fund_usr),
+                                height=250, key="fund_usr_prompt")
+        
+        st.write("#### 3. News Sentiment Agent Prompt")
+        news_sys = st.text_area("System Prompt",
+                                value=prompts_section.get("news_sentiment", {}).get("system_prompt", "You are a financial news intelligence analyst."),
+                                key="news_sys_prompt")
+        
+        default_news_usr = """Analyze the recent headlines for stock '{symbol}':
+{news_summary}
+{learnings_str}
+Identify any negative/positive binary events (lawsuits, product recalls, FDA approvals, executive departures).
+Provide a news sentiment verdict. Respond in valid JSON structure:
+{{
+    "verdict": "POSITIVE" | "NEUTRAL" | "NEGATIVE",
+    "binary_event_detected": boolean,
+    "sentiment_score": float (0.0 to 10.0),
+    "rationale": "Brief summary of news landscape."
+}}
+Do not add any markup or markdown wraps besides the raw JSON."""
+        news_usr = st.text_area("User Prompt Template",
+                                value=prompts_section.get("news_sentiment", {}).get("user_prompt_template", default_news_usr),
+                                height=250, key="news_usr_prompt")
+        
+        st.write("#### 📊 Quantitative Skills (Math-based, Non-LLM)")
+        st.info("The remaining skills (**CalculatePositionSize**, **CalculateIndicators**, and **FetchEarningsCalendar**) are mathematical and logical modules. Their rules (RSI boundaries, stop loss percentages, position size caps) can be configured dynamically under the **Settings & Risk Rules** tab.")
+        
+        save_prompts_btn = st.form_submit_button("Save Prompts & Refine Skills")
+        if save_prompts_btn:
+            if "prompts" not in cfg_prompts:
+                cfg_prompts["prompts"] = {}
+                
+            cfg_prompts["prompts"]["technical_analysis"] = {
+                "system_prompt": tech_sys,
+                "user_prompt_template": tech_usr
+            }
+            cfg_prompts["prompts"]["fundamental_analysis"] = {
+                "system_prompt": fund_sys,
+                "user_prompt_template": fund_usr
+            }
+            cfg_prompts["prompts"]["news_sentiment"] = {
+                "system_prompt": news_sys,
+                "user_prompt_template": news_usr
+            }
+            
+            if save_config(cfg_prompts):
+                st.success("LLM Agent prompts refined and skills updated successfully!")
+                st.rerun()
 
 with tab3:
     st.write("### Latest Agent Execution Logs")
