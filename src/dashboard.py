@@ -258,8 +258,9 @@ def load_system_logs(n=100):
 st.title("📈 Intelligent Invest")
 st.subheader("Multi-Agent Quantitative Trading System Dashboard")
 
-# Fetch state
+# Fetch state and configuration
 state = load_trading_state()
+cfg = load_config()
 active_trades = state.get("active_trades", {})
 net_liq = state.get("net_liquidation", 100000.0)
 cash = state.get("cash", 100000.0)
