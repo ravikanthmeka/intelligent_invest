@@ -418,7 +418,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                             "tech_verdict": tech_verd,
                             "fund_score": fund_score if not is_growth_reinvestment_play else growth_score,
                             "fund_verdict": fund_verd if not is_growth_reinvestment_play else f"GROWTH_PLAY ({growth_verd})",
-                            "growth_evaluated": "YES" if (tier in ["high", "moderate"] and growth_agent_enabled and (fund_verd == "UNFAVORABLE" or fund_score < min_fund)) else "NO",
+                            "growth_evaluated": "YES" if (tier in ["high", "moderate"] and growth_agent_enabled and fund_score is not None and (fund_verd == "UNFAVORABLE" or fund_score < min_fund)) else "NO",
                             "rnd_intensity_pct": rnd_intensity_pct,
                             "revenue_growth_pct": revenue_growth_pct,
                             "net_margin_pct": net_margin_pct
