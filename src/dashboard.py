@@ -1149,7 +1149,7 @@ st.sidebar.metric("Available Cash", f"${cash:,.2f}")
 
 st.sidebar.write("### Broker Session")
 if st.sidebar.button("🔌 Reconnect Broker & Trigger 2FA"):
-    with st.sidebar.spinner("Reconnecting to live gateway..."):
+    with st.spinner("Reconnecting to live gateway..."):
         try:
             # Run docker compose restart command
             subprocess.run(["docker", "compose", "-f", "docker-compose.ib.yaml", "down"], check=False)
