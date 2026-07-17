@@ -1147,6 +1147,17 @@ st.sidebar.write("### Account Summary")
 st.sidebar.metric("Net Liquidation", f"${net_liq:,.2f}")
 st.sidebar.metric("Available Cash", f"${cash:,.2f}")
 
+st.sidebar.write("### Broker Session")
+if st.sidebar.button("🔌 Reconnect Broker & Trigger 2FA"):
+    with st.sidebar.spinner("Reconnecting to live gateway..."):
+        try:
+            # Run docker compose restart command
+            subprocess.run(["docker", "compose", "-f", "docker-compose.ib.yaml", "down"], check=False)
+            subprocess.run(["docker", "compose", "-f", "docker-compose.ib.yaml", "up", "-d"], check=False)
+            st.sidebar.success("Gateway restarted. Check your device for the 2FA push!")
+        except Exception as e:
+            st.sidebar.error(f"Failed to restart gateway: {e}")
+
 # Auto Refresh UI Checkbox
 st.sidebar.write("### Refresh Controls")
 if st.sidebar.button("🔄 Refresh Data"):
