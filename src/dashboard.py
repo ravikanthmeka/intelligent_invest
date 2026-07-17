@@ -395,7 +395,7 @@ def compile_learnings_feedback(state: Dict[str, Any]) -> str:
     return feedback
 
 # Layout: Main Body
-tab1, tab2, tab_candidates, tab_prompts, tab3, tab4 = st.tabs(["📊 Active Positions", "📜 Trade Log & AI Learnings", "🔍 Candidate Analysis Log", "🛠️ LLM Agent Prompts", "📁 System Logs", "⚙️ Settings & Risk Rules"])
+tab1, tab2, tab_candidates, tab_prompts, tab_manual, tab3, tab4 = st.tabs(["📊 Active Positions", "📜 Trade Log & AI Learnings", "🔍 Candidate Analysis Log", "🛠️ LLM Agent Prompts", "🎯 On-Demand Ticker Target", "📁 System Logs", "⚙️ Settings & Risk Rules"])
 
 with tab1:
     st.write("### Portfolio Breakdown")
@@ -615,6 +615,277 @@ Do not add any markup or markdown wraps besides the raw JSON."""
             if save_config(cfg_prompts):
                 st.success("LLM Agent prompts refined and skills updated successfully!")
                 st.rerun()
+
+with tab_manual:
+    st.write("### 🎯 On-Demand Ticker Analysis & Investment")
+    st.markdown("Enter any stock ticker to run real-time agent evaluations and optionally execute a bracket order to add it to your portfolio.")
+    
+    col_t1, col_t2 = st.columns([2, 1])
+    with col_t1:
+        manual_ticker = st.text_input("Ticker Symbol", value="", placeholder="e.g. NVDA, TSLA, AAPL").upper().strip()
+    with col_t2:
+        manual_tier = st.selectbox("Risk Tier", options=["low", "moderate", "high"], index=1)
+        
+    run_btn = st.button("Run Real-Time Agent Analysis")
+    
+    if manual_ticker:
+        # Cache or store the analysis in st.session_state so it persists across button clicks!
+        if run_btn:
+            with st.spinner(f"Running specialized agents analysis on {manual_ticker}..."):
+                try:
+                    import yfinance as yf
+                    from src.skills.market_data import CalculateIndicatorsSkill
+                    from src.agents.specialized import TechnicalAgent, FundamentalAgent, NewsAgent, GrowthAgent
+                    
+                    ticker_obj = yf.Ticker(manual_ticker)
+                    df_hist = ticker_obj.history(period="1y")
+                    if df_hist.empty:
+                        st.error(f"Could not find historical data or ticker symbol '{manual_ticker}'")
+                    else:
+                        # 1. Technical Data
+                        calc = CalculateIndicatorsSkill()
+                        df_indicators = calc.execute(df_hist)
+                        last_row = df_indicators.iloc[-1]
+                        
+                        # Detect volume spike
+                        avg_vol = df_indicators["Volume"].rolling(20).mean().iloc[-1]
+                        volume_spike = bool(last_row["Volume"] > 2 * avg_vol)
+                        
+                        cand_data = {
+                            "symbol": manual_ticker,
+                            "close": float(last_row["Close"]),
+                            "rsi": float(last_row["RSI"]),
+                            "sma_50": float(last_row["SMA_50"]),
+                            "sma_200": float(last_row["SMA_200"]),
+                            "atr": float(last_row["ATR"]),
+                            "volume_spike": volume_spike
+                        }
+                        
+                        # Initialize Agents
+                        llm = LLMClient(provider=cfg.get("llm", {}).get("provider"), model=cfg.get("llm", {}).get("model"))
+                        tech_agent = TechnicalAgent(llm=llm)
+                        fund_agent = FundamentalAgent(llm=llm)
+                        news_agent = NewsAgent(llm=llm)
+                        growth_agent = GrowthAgent(llm=llm)
+                        
+                        # 2. Run Evaluations
+                        # Earnings Shield
+                        passed_shield, shield_reason = news_agent.check_earnings_shield(manual_ticker, days_range=cfg.get("rules", {}).get("earnings_shield_days", 3))
+                        # News
+                        news_analysis = news_agent.analyze_news(manual_ticker)
+                        # Technical
+                        tech_analysis = tech_agent.analyze(manual_ticker, cand_data)
+                        # Fundamental
+                        fund_analysis = fund_agent.analyze(manual_ticker)
+                        # Growth
+                        growth_analysis = growth_agent.analyze(manual_ticker)
+                        
+                        # Save to session_state
+                        st.session_state["manual_analysis"] = {
+                            "ticker": manual_ticker,
+                            "cand_data": cand_data,
+                            "passed_shield": passed_shield,
+                            "shield_reason": shield_reason,
+                            "news": news_analysis,
+                            "tech": tech_analysis,
+                            "fund": fund_analysis,
+                            "growth": growth_analysis
+                        }
+                except Exception as e:
+                    st.error(f"Analysis failed: {e}")
+                    
+        # Render analysis if present in session_state
+        if "manual_analysis" in st.session_state and st.session_state["manual_analysis"]["ticker"] == manual_ticker:
+            ana = st.session_state["manual_analysis"]
+            cand_data = ana["cand_data"]
+            
+            st.write("---")
+            st.write(f"### Real-Time Scorecard for {manual_ticker} (${cand_data['close']:.2f})")
+            
+            # Metric Columns
+            col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+            with col_m1:
+                st.metric("Technical Score", f"{ana['tech'].get('score', 5.0):.1f}/10", ana["tech"].get("verdict"))
+            with col_m2:
+                st.metric("Fundamental Score", f"{ana['fund'].get('score', 5.0):.1f}/10", ana["fund"].get("verdict"))
+            with col_m3:
+                st.metric("News Sentiment", f"{ana['news'].get('sentiment_score', 5.0):.1f}/10", ana["news"].get("verdict"))
+            with col_m4:
+                st.metric("Growth R&D Score", f"{ana['growth'].get('score', 5.0):.1f}/10", ana["growth"].get("verdict"))
+                
+            # Details expanders
+            with st.expander("📊 Technical Indicators Profile"):
+                st.markdown(f"""
+                - **Price**: ${cand_data['close']:.2f}
+                - **14-day RSI**: {cand_data['rsi']:.1f}
+                - **50-day SMA**: ${cand_data['sma_50']:.2f}
+                - **200-day SMA**: ${cand_data['sma_200']:.2f}
+                - **Volume Spike**: {'Yes' if cand_data['volume_spike'] else 'No'}
+                - **ATR**: ${cand_data['atr']:.2f}
+                
+                **Technical Rationale**:
+                {ana['tech'].get('rationale')}
+                """)
+                
+            with st.expander("🏛️ Fundamentals & Financial Health"):
+                st.markdown(f"""
+                **Fundamental Rationale**:
+                {ana['fund'].get('rationale')}
+                """)
+                
+            with st.expander("📰 News & Binary Events"):
+                st.markdown(f"""
+                - **Earnings Shield Status**: {'PASSED' if ana['passed_shield'] else f'SHIELD ACTIVE ({ana["shield_reason"]})'}
+                - **Binary Event Detected**: {'Yes' if ana['news'].get('binary_event_detected') else 'No'}
+                
+                **News Rationale**:
+                {ana['news'].get('rationale')}
+                """)
+                
+            with st.expander("🚀 Growth & R&D Reinvestment Profile"):
+                st.markdown(f"""
+                - **R&D Intensity**: {ana['growth'].get('rnd_intensity_pct', 0.0):.1f}%
+                - **YoY Revenue Growth**: {ana['growth'].get('revenue_growth_pct', 0.0):.1f}%
+                - **Net Profit Margin**: {ana['growth'].get('net_margin_pct', 0.0):.1f}%
+                
+                **Growth Rationale**:
+                {ana['growth'].get('rationale')}
+                """)
+                
+            # Action Section
+            st.write("### 🛍️ Investment Action")
+            
+            # Check qualification criteria
+            rules_cfg = cfg.get("rules", {})
+            growth_rules = rules_cfg.get("growth_reinvestment_rules", {})
+            
+            passed_news = ana["news"].get("verdict") != "NEGATIVE" and ana["news"].get("sentiment_score", 5.0) >= rules_cfg.get("min_news_score", 5.0)
+            passed_tech = ana["tech"].get("verdict") == "BULLISH" and ana["tech"].get("score", 5.0) >= rules_cfg.get("min_technical_score", 7.0)
+            
+            # Traditional Fund Pass
+            passed_fund = ana["fund"].get("verdict") != "UNFAVORABLE" and ana["fund"].get("score", 5.0) >= rules_cfg.get("min_fundamental_score", 5.0)
+            
+            # Growth Fund Pass Override
+            is_growth_override = False
+            if not passed_fund and manual_tier in ["high", "moderate"] and growth_rules.get("enabled", True):
+                passed_rnd = (ana["growth"].get("rnd_intensity_pct", 0.0) / 100.0) >= (growth_rules.get("min_rnd_intensity_pct", 10.0) / 100.0)
+                passed_rev = (ana["growth"].get("revenue_growth_pct", 0.0) / 100.0) >= (growth_rules.get("min_revenue_growth_pct", 15.0) / 100.0)
+                passed_score = ana["growth"].get("score", 5.0) >= growth_rules.get("min_growth_score", 6.5)
+                if ana["growth"].get("verdict") == "FAVORABLE" and passed_rnd and passed_rev and passed_score:
+                    is_growth_override = True
+                    
+            eligible = ana["passed_shield"] and passed_news and passed_tech and (passed_fund or is_growth_override)
+            
+            if eligible:
+                st.success("✅ This ticker **passes all criteria** for the selected risk/return level!")
+            else:
+                st.warning("⚠️ This ticker **does not pass** all default screening criteria.")
+                
+            force_buy = st.checkbox("Force override screening filters and purchase anyway", value=False)
+            
+            if eligible or force_buy:
+                if st.button(f"Execute Sized Buy Order for {manual_ticker}"):
+                    with st.spinner("Connecting to broker and executing bracket order..."):
+                        try:
+                            import asyncio
+                            from src.broker import BrokerAgent
+                            from src.agents.specialized import RiskAgent
+                            
+                            # Initialize Broker Connection
+                            broker = BrokerAgent(host=cfg.get("broker", {}).get("host", "127.0.0.1"),
+                                                 port=int(cfg.get("broker", {}).get("port", 4002)),
+                                                 client_id=int(cfg.get("broker", {}).get("client_id", 88)))
+                            
+                            # Risk Manager Sizing
+                            risk_agent = RiskAgent(
+                                max_positions=cfg.get("risk", {}).get("max_positions", 5),
+                                max_cap_pct=cfg.get("risk", {}).get("max_capital_pct", 0.20),
+                                risk_pct=cfg.get("risk", {}).get("risk_per_trade_pct", 0.01),
+                                min_stop_loss_pct=cfg.get("risk", {}).get("min_stop_loss_pct", 0.05),
+                                max_stop_loss_pct=cfg.get("risk", {}).get("max_stop_loss_pct", 0.07)
+                            )
+                            
+                            # Calculate tier allocation target limit
+                            alloc_pct = cfg.get("allocation", {}).get(f"{manual_tier}_risk_pct", 0.30)
+                            target_tier_cap = net_liq * alloc_pct
+                            deployed_tier_cap = sum(details.get("initial_capital", 0.0) 
+                                                    for details in active_trades.values() 
+                                                    if details.get("risk_tier", "moderate") == manual_tier)
+                            available_tier_cap = target_tier_cap - deployed_tier_cap
+                            
+                            # Size position
+                            sizing = risk_agent.calculate_position_size(
+                                portfolio_value=net_liq,
+                                entry_price=cand_data["close"],
+                                atr=cand_data["atr"],
+                                available_tier_capital=available_tier_cap
+                            )
+                            
+                            qty = sizing["quantity"]
+                            if qty <= 0:
+                                st.error("Sizing returned 0 quantity. Insufficient allocated capital in this risk tier.")
+                            else:
+                                async def place_order():
+                                    await broker.connect()
+                                    order_id = await broker.execute_buy(manual_ticker, qty, sizing["stop_loss_price"])
+                                    await broker.disconnect()
+                                    return order_id
+                                    
+                                order_id = asyncio.run(place_order())
+                                
+                                if order_id:
+                                    # Save new position to state
+                                    state = load_state()
+                                    state["active_trades"][manual_ticker] = {
+                                        "entry_price": cand_data["close"],
+                                        "stop_loss_price": sizing["stop_loss_price"],
+                                        "quantity": qty,
+                                        "initial_capital": sizing["capital_required"],
+                                        "purchased_at": datetime.now().isoformat(),
+                                        "order_id": order_id,
+                                        "risk_tier": manual_tier,
+                                        "analysis": {
+                                            "news_score": ana["news"].get("sentiment_score"),
+                                            "news_verdict": ana["news"].get("verdict"),
+                                            "tech_score": ana["tech"].get("score"),
+                                            "tech_verdict": ana["tech"].get("verdict"),
+                                            "fund_score": ana["fund"].get("score") if not is_growth_override else ana["growth"].get("score"),
+                                            "fund_verdict": ana["fund"].get("verdict") if not is_growth_override else "GROWTH_PLAY",
+                                            "rnd_intensity_pct": ana["growth"].get("rnd_intensity_pct"),
+                                            "revenue_growth_pct": ana["growth"].get("revenue_growth_pct"),
+                                            "net_margin_pct": ana["growth"].get("net_margin_pct")
+                                        }
+                                    }
+                                    
+                                    # Log evaluation too
+                                    eval_entry = {
+                                        "symbol": manual_ticker,
+                                        "risk_tier": manual_tier,
+                                        "timestamp": datetime.now().isoformat(),
+                                        "status": "Purchased (Manual Target)",
+                                        "analysis": {
+                                            "earnings_checked": "PASSED" if ana["passed_shield"] else "TRIGGERED",
+                                            "news_score": ana["news"].get("sentiment_score"),
+                                            "news_verdict": ana["news"].get("verdict"),
+                                            "tech_score": ana["tech"].get("score"),
+                                            "tech_verdict": ana["tech"].get("verdict"),
+                                            "fund_score": ana["fund"].get("score") if not is_growth_override else ana["growth"].get("score"),
+                                            "fund_verdict": ana["fund"].get("verdict") if not is_growth_override else "GROWTH_PLAY",
+                                            "growth_evaluated": "YES" if is_growth_override else "NO",
+                                            "rnd_intensity_pct": ana["growth"].get("rnd_intensity_pct"),
+                                            "revenue_growth_pct": ana["growth"].get("revenue_growth_pct"),
+                                            "net_margin_pct": ana["growth"].get("net_margin_pct")
+                                        }
+                                    }
+                                    state["candidate_evaluations"].append(eval_entry)
+                                    save_state(state)
+                                    
+                                    st.success(f"🎉 Order placed successfully! Bought {qty} shares of {manual_ticker} (Order ID: {order_id})")
+                                    st.rerun()
+                                else:
+                                    st.error("Broker returned None for Order ID. Purchase failed.")
+                        except Exception as e:
+                            st.error(f"Order placement failed: {e}")
 
 with tab3:
     st.write("### Latest Agent Execution Logs")
