@@ -476,6 +476,9 @@ with tab_candidates:
                 "Tech Verdict": analysis.get("tech_verdict") if analysis.get("tech_verdict") is not None else "-",
                 "Fund Score": f"{analysis.get('fund_score')}/10" if analysis.get('fund_score') is not None else "-",
                 "Fund Verdict": analysis.get("fund_verdict") if analysis.get("fund_verdict") is not None else "-",
+                "Growth Play?": "Yes" if analysis.get("growth_evaluated") == "YES" and "GROWTH_PLAY" in str(analysis.get("fund_verdict", "")) else ("No" if analysis.get("growth_evaluated") == "YES" else "-"),
+                "R&D Intensity": f"{analysis.get('rnd_intensity_pct', 0.0):.1f}%" if analysis.get("growth_evaluated") == "YES" else "-",
+                "YoY Revenue Growth": f"{analysis.get('revenue_growth_pct', 0.0):.1f}%" if analysis.get("growth_evaluated") == "YES" else "-",
                 "Status": item.get("status")
             })
         df_evals = pd.DataFrame(rows)
@@ -560,6 +563,30 @@ Do not add any markup or markdown wraps besides the raw JSON."""
                                 value=prompts_section.get("news_sentiment", {}).get("user_prompt_template", default_news_usr),
                                 height=250, key="news_usr_prompt")
         
+        st.write("#### 4. Growth & R&D Analysis Agent Prompt")
+        growth_sys = st.text_area("System Prompt",
+                                  value=prompts_section.get("growth_rnd_evaluation", {}).get("system_prompt", "You are a growth investing specialist and corporate finance expert."),
+                                  key="growth_sys_prompt")
+        
+        default_growth_usr = """Evaluate the growth reinvestment profile of company ticker '{symbol}':
+- Latest Annual Revenue: ${revenue:,.2f}
+- Latest Annual R&D Expenditure: ${rnd_exp:,.2f}
+- R&D Intensity (R&D / Revenue): {rnd_intensity:.1%}
+- Year-over-Year Revenue Growth: {revenue_growth:.1%}
+- Net Profit Margin: {net_margin:.1%}
+{learnings_str}
+Determine if this company represents a high-quality growth company that is deliberately trading short-term profitability for massive R&D reinvestment and market share scaling.
+Respond in a valid JSON structure:
+{{
+    "verdict": "FAVORABLE" | "NEUTRAL" | "UNFAVORABLE",
+    "score": float (0.0 to 10.0),
+    "rationale": "Critique of R&D reinvestment efficiency, revenue growth momentum, and long-term scaling outlook."
+}}
+Do not add any markup or markdown wraps besides the raw JSON."""
+        growth_usr = st.text_area("User Prompt Template",
+                                  value=prompts_section.get("growth_rnd_evaluation", {}).get("user_prompt_template", default_growth_usr),
+                                  height=250, key="growth_usr_prompt")
+        
         st.write("#### 📊 Quantitative Skills (Math-based, Non-LLM)")
         st.info("The remaining skills (**CalculatePositionSize**, **CalculateIndicators**, and **FetchEarningsCalendar**) are mathematical and logical modules. Their rules (RSI boundaries, stop loss percentages, position size caps) can be configured dynamically under the **Settings & Risk Rules** tab.")
         
@@ -579,6 +606,10 @@ Do not add any markup or markdown wraps besides the raw JSON."""
             cfg_prompts["prompts"]["news_sentiment"] = {
                 "system_prompt": news_sys,
                 "user_prompt_template": news_usr
+            }
+            cfg_prompts["prompts"]["growth_rnd_evaluation"] = {
+                "system_prompt": growth_sys,
+                "user_prompt_template": growth_usr
             }
             
             if save_config(cfg_prompts):
@@ -683,6 +714,23 @@ with tab4:
                 earnings_shield_days = st.slider("Earnings Shield Window (Days)", min_value=1, max_value=10, step=1,
                                                  value=int(rules_section.get("earnings_shield_days", 3)),
                                                  help="Skip candidates if earnings date is within +/- N days.")
+            
+            st.write("#### Growth & R&D Reinvestment Rules")
+            growth_section = rules_section.get("growth_reinvestment_rules", {})
+            col_gr1, col_gr2 = st.columns(2)
+            with col_gr1:
+                growth_enabled = st.toggle("Enable Growth & R&D Overrides", value=bool(growth_section.get("enabled", True)),
+                                           help="Allows candidates in High/Moderate risk tiers with strong revenue growth and heavy R&D intensity to pass the fundamental filter even if traditional fundamentals are unfavorable.")
+                min_growth_score_val = st.slider("Minimum Growth Agent Score (0-10)", min_value=1.0, max_value=10.0, step=0.5,
+                                                 value=float(growth_section.get("min_growth_score", 6.5)),
+                                                 help="Qualified growth override plays must receive at least this score from the Growth Agent.")
+            with col_gr2:
+                min_rnd_intensity_val = st.slider("Minimum R&D Intensity (%)", min_value=0.0, max_value=40.0, step=1.0,
+                                                  value=float(growth_section.get("min_rnd_intensity_pct", 10.0)),
+                                                  help="Latest annual R&D expenditure divided by revenue must be at least this percentage.")
+                min_revenue_growth_val = st.slider("Minimum YoY Revenue Growth (%)", min_value=0.0, max_value=50.0, step=1.0,
+                                                   value=float(growth_section.get("min_revenue_growth_pct", 15.0)),
+                                                   help="Latest annual year-over-year revenue growth must be at least this percentage.")
 
             st.write("#### Risk Tier Specifications")
             tier_rules = cfg.get("tier_rules", {})
@@ -748,6 +796,13 @@ with tab4:
                     cfg["rules"]["min_technical_score"] = min_technical_score
                     cfg["rules"]["min_news_score"] = min_news_score
                     cfg["rules"]["earnings_shield_days"] = earnings_shield_days
+                    
+                    if "growth_reinvestment_rules" not in cfg["rules"]:
+                        cfg["rules"]["growth_reinvestment_rules"] = {}
+                    cfg["rules"]["growth_reinvestment_rules"]["enabled"] = growth_enabled
+                    cfg["rules"]["growth_reinvestment_rules"]["min_growth_score"] = min_growth_score_val
+                    cfg["rules"]["growth_reinvestment_rules"]["min_rnd_intensity_pct"] = min_rnd_intensity_val
+                    cfg["rules"]["growth_reinvestment_rules"]["min_revenue_growth_pct"] = min_revenue_growth_val
 
                     if "tier_rules" not in cfg:
                         cfg["tier_rules"] = {}

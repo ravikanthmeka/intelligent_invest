@@ -16,7 +16,8 @@ from src.agents.specialized import (
     FundamentalAgent,
     NewsAgent,
     RiskAgent,
-    PortfolioManagerAgent
+    PortfolioManagerAgent,
+    GrowthAgent
 )
 
 # Setup logging
@@ -98,6 +99,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
     )
     tech_agent = TechnicalAgent(llm=llm)
     fund_agent = FundamentalAgent(llm=llm)
+    growth_agent = GrowthAgent(llm=llm)
     news_agent = NewsAgent(llm=llm)
     risk_agent = RiskAgent(
         max_positions=config.get("risk", {}).get("max_positions", 5),
@@ -272,6 +274,13 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
         min_news = rules_cfg.get("min_news_score", 5.0)
         earnings_days = rules_cfg.get("earnings_shield_days", 3)
         
+        # Load growth reinvestment rules
+        growth_rules = rules_cfg.get("growth_reinvestment_rules", {})
+        growth_agent_enabled = growth_rules.get("enabled", True)
+        min_growth_score = growth_rules.get("min_growth_score", 6.5)
+        min_rnd_intensity = growth_rules.get("min_rnd_intensity_pct", 10.0) / 100.0
+        min_growth_rev = growth_rules.get("min_revenue_growth_pct", 15.0) / 100.0
+        
         evaluations = []
         
         if active_positions_count >= max_positions:
@@ -362,7 +371,36 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                                 fund_verd = fund_analysis.get("verdict", "NEUTRAL")
                                 logger.info(f"Fundamental Verdict for {symbol}: {fund_verd} | Score: {fund_score}/10")
                                 
+                                is_growth_reinvestment_play = False
+                                rnd_intensity_pct = 0.0
+                                revenue_growth_pct = 0.0
+                                net_margin_pct = 0.0
+                                growth_score = None
+                                growth_verd = None
+                                
                                 if fund_verd == "UNFAVORABLE" or fund_score < min_fund:
+                                    # Traditional fundamentals failed. Check if this is a valid Growth/R&D play for High/Moderate risk tiers
+                                    if tier in ["high", "moderate"] and growth_agent_enabled:
+                                        logger.info(f"Traditional fundamentals unfavorable for {symbol}. Evaluating as Growth/R&D Reinvestment play...")
+                                        growth_analysis = growth_agent.analyze(symbol, learnings_feedback=learnings_feedback)
+                                        
+                                        growth_score = growth_analysis.get("score", 5.0)
+                                        growth_verd = growth_analysis.get("verdict", "NEUTRAL")
+                                        rnd_intensity_pct = growth_analysis.get("rnd_intensity_pct", 0.0)
+                                        revenue_growth_pct = growth_analysis.get("revenue_growth_pct", 0.0)
+                                        net_margin_pct = growth_analysis.get("net_margin_pct", 0.0)
+                                        
+                                        logger.info(f"Growth Agent Verdict for {symbol}: {growth_verd} | Score: {growth_score}/10 | R&D Intensity: {rnd_intensity_pct:.1f}% | Revenue Growth: {revenue_growth_pct:.1f}%")
+                                        
+                                        if (growth_verd == "FAVORABLE" and 
+                                            growth_score >= min_growth_score and 
+                                            (rnd_intensity_pct / 100.0) >= min_rnd_intensity and 
+                                            (revenue_growth_pct / 100.0) >= min_growth_rev):
+                                            
+                                            logger.info(f"Overriding traditional fundamental filter for {symbol}: Qualified as high-reinvestment growth play.")
+                                            is_growth_reinvestment_play = True
+                                
+                                if (fund_verd == "UNFAVORABLE" or fund_score < min_fund) and not is_growth_reinvestment_play:
                                     logger.info(f"Skipping {symbol}: Unfavorable fundamentals.")
                                     status = f"Skipped: Fundamental Strength ({fund_verd}, Score: {fund_score})"
                     
@@ -371,15 +409,19 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                         "symbol": symbol,
                         "risk_tier": tier,
                         "timestamp": datetime.now().isoformat(),
-                        "status": status,
+                        "status": status if status != "Passed" else ("Passed (Growth Play)" if is_growth_reinvestment_play else "Passed"),
                         "analysis": {
                             "earnings_checked": "PASSED" if passed_shield else "TRIGGERED",
                             "news_score": news_score,
                             "news_verdict": news_verd,
                             "tech_score": tech_score,
                             "tech_verdict": tech_verd,
-                            "fund_score": fund_score,
-                            "fund_verdict": fund_verd
+                            "fund_score": fund_score if not is_growth_reinvestment_play else growth_score,
+                            "fund_verdict": fund_verd if not is_growth_reinvestment_play else f"GROWTH_PLAY ({growth_verd})",
+                            "growth_evaluated": "YES" if (tier in ["high", "moderate"] and growth_agent_enabled and (fund_verd == "UNFAVORABLE" or fund_score < min_fund)) else "NO",
+                            "rnd_intensity_pct": rnd_intensity_pct,
+                            "revenue_growth_pct": revenue_growth_pct,
+                            "net_margin_pct": net_margin_pct
                         }
                     }
                     evaluations.append(eval_entry)
@@ -419,13 +461,16 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                                 "news_verdict": news_verd,
                                 "tech_score": tech_score,
                                 "tech_verdict": tech_verd,
-                                "fund_score": fund_score,
-                                "fund_verdict": fund_verd
+                                "fund_score": fund_score if not is_growth_reinvestment_play else growth_score,
+                                "fund_verdict": fund_verd if not is_growth_reinvestment_play else f"GROWTH_PLAY ({growth_verd})",
+                                "rnd_intensity_pct": rnd_intensity_pct,
+                                "revenue_growth_pct": revenue_growth_pct,
+                                "net_margin_pct": net_margin_pct
                             }
                         }
                         slots_available -= 1
                         available_tier_cap -= sizing["capital_required"]
-                        eval_entry["status"] = "Purchased"
+                        eval_entry["status"] = "Purchased (Growth Play)" if is_growth_reinvestment_play else "Purchased"
 
             # Save state after scans and executions
             state["active_trades"] = active_trades

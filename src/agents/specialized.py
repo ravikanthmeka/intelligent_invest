@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Tuple, Optional
 from src.llm import LLMClient
 from src.agents.base import Agent
 from src.skills.market_data import CalculateIndicatorsSkill, FetchEarningsCalendarSkill, FetchRecentNewsSkill
-from src.skills.analysis import TechnicalAnalysisSkill, FundamentalAnalysisSkill, NewsSentimentSkill
+from src.skills.analysis import TechnicalAnalysisSkill, FundamentalAnalysisSkill, NewsSentimentSkill, GrowthRnDEvaluationSkill
 from src.skills.risk_management import CalculatePositionSizeSkill, EvaluateActivePositionSkill
 
 logger = logging.getLogger("SpecializedAgents")
@@ -229,3 +229,13 @@ class PortfolioManagerAgent(Agent):
         except Exception as e:
             logger.error(f"Error evaluating momentum for {symbol}: {e}")
             return False
+
+class GrowthAgent(Agent):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="GrowthAgent", role="Evaluate companies focusing on future growth through high R&D intensity and revenue scaling despite lower current profits.")
+        self.llm = llm
+        self.register_skill(GrowthRnDEvaluationSkill(llm))
+
+    def analyze(self, symbol: str, learnings_feedback: str = "") -> Dict[str, Any]:
+        growth_skill = self.get_skill("GrowthRnDEvaluation")
+        return growth_skill.execute(symbol, learnings_feedback=learnings_feedback)
