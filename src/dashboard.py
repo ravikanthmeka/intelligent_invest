@@ -209,6 +209,24 @@ st.markdown("""
         color: #ffffff !important;
         border-color: #2563eb !important;
     }
+    
+    /* Regular Button Styling */
+    div.stButton > button {
+        background-color: #4c1d95 !important;
+        color: #ffffff !important;
+        border: 1px solid #7c3aed !important;
+        font-weight: 600 !important;
+        padding: 0.5rem 1.5rem !important;
+        border-radius: 6px !important;
+        cursor: pointer !important;
+        transition: all 0.3s ease;
+    }
+    div.stButton > button:hover {
+        background-color: #6d28d9 !important;
+        color: #ffffff !important;
+        border-color: #8b5cf6 !important;
+        box-shadow: 0 0 10px rgba(124, 58, 237, 0.4);
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -638,6 +656,7 @@ with tab_manual:
             with st.spinner(f"Running specialized agents analysis on {manual_ticker}..."):
                 try:
                     import yfinance as yf
+                    from src.llm import LLMClient
                     from src.skills.market_data import CalculateIndicatorsSkill
                     from src.agents.specialized import TechnicalAgent, FundamentalAgent, NewsAgent, GrowthAgent
                     
