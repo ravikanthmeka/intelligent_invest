@@ -855,7 +855,13 @@ with tab_manual:
                                     await broker.disconnect()
                                     return order_id
                                     
-                                order_id = asyncio.run(place_order())
+                                try:
+                                    loop = asyncio.get_event_loop()
+                                except RuntimeError:
+                                    loop = asyncio.new_event_loop()
+                                    asyncio.set_event_loop(loop)
+                                    
+                                order_id = loop.run_until_complete(place_order())
                                 
                                 if order_id:
                                     # Save new position to state
