@@ -19,8 +19,8 @@ broker:
 
 risk:
   max_positions: 5
-  max_capital_pct: 0.20  # Max 20% of capital in a single stock
-  risk_per_trade_pct: 0.01  # Risk 1% of portfolio on any one trade
+  max_capital_pct: 0.35  # Max 35% of capital in a single stock
+  risk_per_trade_pct: 0.04  # Risk 4% of portfolio on any one trade
   min_stop_loss_pct: 0.05  # Minimum 5% stop loss distance
   max_stop_loss_pct: 0.07  # Maximum 7% stop loss distance
   trail_trigger_pct: 0.03  # Return threshold to activate trailing stop/take profit

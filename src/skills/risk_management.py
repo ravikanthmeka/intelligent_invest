@@ -36,11 +36,18 @@ class CalculatePositionSizeSkill(Skill):
         # Limit capital allocated
         max_capital_allowed = portfolio_value * c_pct
         if available_tier_capital is not None:
-            max_capital_allowed = min(max_capital_allowed, available_tier_capital)
+            max_capital_allowed = max(max_capital_allowed, available_tier_capital)
 
         if capital_required > max_capital_allowed:
             quantity = int(max_capital_allowed // entry_price)
             capital_required = quantity * entry_price
+            
+        # Fallback for high-priced stocks on small portfolios: if quantity rounded to 0,
+        # but 1 share is affordable by available tier capital and risk amount is sufficient:
+        if quantity == 0 and available_tier_capital is not None and available_tier_capital >= entry_price:
+            if max_risk_amount >= risk_distance * 0.7:
+                quantity = 1
+                capital_required = entry_price
             
         return {
             "quantity": quantity,
