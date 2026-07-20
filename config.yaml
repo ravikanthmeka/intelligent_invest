@@ -50,6 +50,17 @@ watchlist:
 scheduler:
   interval_minutes: 30
 
+rules:
+  min_technical_score: 5.0
+  min_fundamental_score: 5.0
+  min_news_score: 5.0
+  earnings_shield_days: 3
+  growth_reinvestment_rules:
+    enabled: true
+    min_growth_score: 6.5
+    min_rnd_intensity_pct: 10.0
+    min_revenue_growth_pct: 15.0
+
 tier_rules:
   high:
     guidelines: "High-beta, high-growth technology, biotech, or emerging stocks with high volatility."

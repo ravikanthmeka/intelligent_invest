@@ -371,7 +371,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                             tech_verd = tech_analysis.get("verdict", "NEUTRAL")
                             logger.info(f"Technical Verdict for {symbol}: {tech_verd} | Score: {tech_score}/10")
                             
-                            if tech_verd != "BULLISH" or tech_score < min_tech:
+                            if tech_verd == "BEARISH" or tech_score < min_tech:
                                 logger.info(f"Skipping {symbol}: Technical setup insufficient.")
                                 status = f"Skipped: Technical Setup ({tech_verd}, Score: {tech_score})"
                             else:

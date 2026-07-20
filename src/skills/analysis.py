@@ -38,7 +38,8 @@ class TechnicalAnalysisSkill(Skill):
         - 14-day Average True Range (ATR): ${atr:.2f}
         - Volume Spike Detected: {volume_spike}
         {learnings_str}
-        Provide a verdict. You must respond in a valid JSON structure:
+        Evaluate momentum and trend. If Current Price is above 50-day SMA or 50-day SMA is above 200-day SMA and RSI is between 45 and 70, this represents a healthy uptrend structure: respond with verdict 'BULLISH' and a score between 7.0 and 8.5.
+        You must respond in a valid JSON structure:
         {{
             "verdict": "BULLISH" | "NEUTRAL" | "BEARISH",
             "score": float (0.0 to 10.0),
