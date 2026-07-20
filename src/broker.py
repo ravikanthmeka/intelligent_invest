@@ -111,21 +111,20 @@ class BrokerAgent:
             # Quality check on contract definition
             await self.ib.qualifyContractsAsync(contract)
 
-            # Create bracket order: Parent (Market buy) and Stop Loss order
+            # Create parent Market Buy order with transmit=False so it links with stop-loss child
             parent = MarketOrder("BUY", quantity)
-            stop_order = StopOrder("SELL", quantity, stop_loss_price)
-            stop_order.parentId = parent.orderId
-            stop_order.transmit = True
-
-            # In IB, you transmit parent and child.
-            # Set transmit=False on parent so it doesn't execute before child is uploaded, then transmit=True on child.
             parent.transmit = False
-            
             parent_trade = self.ib.placeOrder(contract, parent)
+            
+            # Create child Stop Loss order with GTC Time-In-Force linked to parent orderId
+            stop_order = StopOrder("SELL", quantity, stop_loss_price)
+            stop_order.parentId = parent_trade.order.orderId
+            stop_order.tif = "GTC"
+            stop_order.transmit = True
             stop_trade = self.ib.placeOrder(contract, stop_order)
             
-            logger.info(f"Placed Bracket Buy for {symbol}: Parent OrderId {parent.orderId}, Stop Loss OrderId {stop_order.orderId} at ${stop_loss_price:.2f}")
-            return str(parent.orderId)
+            logger.info(f"Placed Bracket Buy for {symbol}: Parent OrderId {parent_trade.order.orderId}, Stop Loss OrderId {stop_trade.order.orderId} at ${stop_loss_price:.2f}")
+            return str(parent_trade.order.orderId)
         except Exception as e:
             logger.error(f"Error executing buy order for {symbol}: {e}")
             return None
