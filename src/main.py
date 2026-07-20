@@ -1,5 +1,8 @@
 import os
 import sys
+# Ensure project root is in sys.path so 'src' module imports resolve correctly
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import yaml
 import json
 import asyncio

@@ -1172,8 +1172,11 @@ if st.sidebar.button("🚀 Run Trading Cycle Now"):
     with st.spinner("Executing live trading cycle scan and evaluation..."):
         try:
             python_bin = sys.executable
-            main_py_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "main.py")
-            result = subprocess.run([python_bin, main_py_path], capture_output=True, text=True, check=False)
+            proj_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            main_py_path = os.path.join(proj_root, "src", "main.py")
+            env = os.environ.copy()
+            env["PYTHONPATH"] = proj_root
+            result = subprocess.run([python_bin, main_py_path], cwd=proj_root, env=env, capture_output=True, text=True, check=False)
             if result.returncode == 0:
                 st.sidebar.success("Trading cycle completed successfully!")
                 st.rerun()
