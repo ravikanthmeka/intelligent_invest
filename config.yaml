@@ -43,9 +43,20 @@ watchlist:
   - "MRVL"
   - "PYPL"
   - "ADBE"
-  - "NFLX"
   - "ORCL"
   - "CSCO"
+  - "PLTR"
+  - "SOFI"
+  - "RIVN"
+  - "DKNG"
+  - "DNA"
+  - "UPST"
+  - "HIMS"
+  - "PINS"
+  - "HOOD"
+  - "U"
+  - "AFRM"
+  - "PATH"
 
 scheduler:
   interval_minutes: 30

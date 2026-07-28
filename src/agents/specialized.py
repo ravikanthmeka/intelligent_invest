@@ -43,9 +43,10 @@ class MarketScannerAgent(Agent):
         if self.llm:
             learnings_str = f"\nPortfolio learnings from past trades:\n{self.learnings_feedback}\n" if self.learnings_feedback else ""
             prompt = f"""
-            Suggest a list of 12 US stock ticker symbols that represent the '{risk_tier}' risk/return profile:
+            Suggest a list of 16 US stock ticker symbols that represent the '{risk_tier}' risk/return profile:
             Guidelines: {guidelines}
             {learnings_str}
+            Important: Ensure the list includes a diverse mix of large-cap leaders and smaller, low-priced growth stocks (under $30/share) that invest heavily in research & development (R&D) or have strong revenue growth scaling despite lower net profit margins.
             Respond in valid JSON structure:
             {{
                 "tickers": ["SYMBOL1", "SYMBOL2", ...]
