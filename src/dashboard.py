@@ -652,6 +652,11 @@ with tab_manual:
     run_btn = st.button("Run Real-Time Agent Analysis")
     
     if manual_ticker:
+        # Check if blacklisted
+        blacklist = cfg.get("blacklist", [])
+        if manual_ticker in blacklist:
+            st.warning(f"⚠️ Note: '{manual_ticker}' is currently in your blacklist and will be skipped in automatic trading cycles.")
+            
         # Cache or store the analysis in st.session_state so it persists across button clicks!
         if run_btn:
             with st.spinner(f"Running specialized agents analysis on {manual_ticker}..."):
@@ -1066,6 +1071,11 @@ with tab4:
             watchlist_text = st.text_area("Watchlist (comma-separated tickers)", value=current_watchlist, 
                                           help="Enter ticker symbols separated by commas (e.g. AAPL, MSFT, NVDA).")
             
+            st.write("#### Blacklisted Tickers")
+            current_blacklist = ", ".join(cfg.get("blacklist", []))
+            blacklist_text = st.text_area("Blacklist (comma-separated tickers)", value=current_blacklist, 
+                                          help="Enter ticker symbols to skip and never trade (e.g. WBA, TSLA).")
+            
             submit_btn = st.form_submit_button("Save Configuration & Rules")
             if submit_btn:
                 if total_alloc_sum != 100:
@@ -1127,6 +1137,9 @@ with tab4:
                     
                     watchlist_list = [t.strip().upper() for t in watchlist_text.split(",") if t.strip()]
                     cfg["watchlist"] = watchlist_list
+                    
+                    blacklist_list = [t.strip().upper() for t in blacklist_text.split(",") if t.strip()]
+                    cfg["blacklist"] = blacklist_list
                     
                     if save_config(cfg):
                         # Save environment variables and check for docker restart

@@ -324,6 +324,13 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                 
                 for cand in candidates:
                     symbol = cand["symbol"]
+                    
+                    # Filter out blacklisted tickers
+                    blacklist = config.get("blacklist", [])
+                    if symbol in blacklist:
+                        logger.info(f"Skipping {symbol}: Ticker is in the blacklist.")
+                        continue
+                        
                     if symbol in active_trades:
                         continue  # Already in portfolio
                     
