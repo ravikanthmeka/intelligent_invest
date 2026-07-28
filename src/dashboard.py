@@ -647,7 +647,7 @@ with tab_manual:
     with col_t1:
         manual_ticker = st.text_input("Ticker Symbol", value="", placeholder="e.g. NVDA, TSLA, AAPL").upper().strip()
     with col_t2:
-        manual_tier = st.selectbox("Risk Tier", options=["low", "moderate", "high"], index=1)
+        manual_tier = st.selectbox("Risk Tier", options=["low", "moderate", "high", "penny"], index=1)
         
     run_btn = st.button("Run Real-Time Agent Analysis")
     
@@ -998,17 +998,20 @@ with tab4:
             st.write("#### Portfolio Allocation Targets")
             high_pct_val = int(cfg.get("allocation", {}).get("high_risk_pct", 0.30) * 100)
             mod_pct_val = int(cfg.get("allocation", {}).get("moderate_risk_pct", 0.40) * 100)
-            low_pct_val = int(cfg.get("allocation", {}).get("low_risk_pct", 0.30) * 100)
+            low_pct_val = int(cfg.get("allocation", {}).get("low_risk_pct", 0.25) * 100)
+            penny_pct_val = int(cfg.get("allocation", {}).get("penny_risk_pct", 0.05) * 100)
  
-            col_alloc1, col_alloc2, col_alloc3 = st.columns(3)
+            col_alloc1, col_alloc2, col_alloc3, col_alloc4 = st.columns(4)
             with col_alloc1:
                 high_risk_pct_input = st.slider("High Risk Allocation (%)", min_value=0, max_value=100, step=5, value=high_pct_val)
             with col_alloc2:
                 mod_risk_pct_input = st.slider("Moderate Risk Allocation (%)", min_value=0, max_value=100, step=5, value=mod_pct_val)
             with col_alloc3:
                 low_risk_pct_input = st.slider("Low Risk Allocation (%)", min_value=0, max_value=100, step=5, value=low_pct_val)
+            with col_alloc4:
+                penny_risk_pct_input = st.slider("Penny Allocation (%)", min_value=0, max_value=100, step=5, value=penny_pct_val)
             
-            total_alloc_sum = high_risk_pct_input + mod_risk_pct_input + low_risk_pct_input
+            total_alloc_sum = high_risk_pct_input + mod_risk_pct_input + low_risk_pct_input + penny_risk_pct_input
             if total_alloc_sum != 100:
                 st.warning(f"⚠️ Allocations currently sum to **{total_alloc_sum}%**. They MUST sum to exactly 100% to save.")
 
@@ -1050,7 +1053,7 @@ with tab4:
             st.write("#### Risk Tier Specifications")
             tier_rules = cfg.get("tier_rules", {})
             tier_rules_inputs = {}
-            for tier in ["high", "moderate", "low"]:
+            for tier in ["high", "moderate", "low", "penny"]:
                 st.write(f"**{tier.upper()} RISK TIER RULES**")
                 col_t1, col_t2, col_t3, col_t4 = st.columns(4)
                 
@@ -1099,6 +1102,7 @@ with tab4:
                     cfg["allocation"]["high_risk_pct"] = high_risk_pct_input / 100.0
                     cfg["allocation"]["moderate_risk_pct"] = mod_risk_pct_input / 100.0
                     cfg["allocation"]["low_risk_pct"] = low_risk_pct_input / 100.0
+                    cfg["allocation"]["penny_risk_pct"] = penny_risk_pct_input / 100.0
                     
                     if "scheduler" not in cfg:
                         cfg["scheduler"] = {}
@@ -1126,7 +1130,7 @@ with tab4:
 
                     if "tier_rules" not in cfg:
                         cfg["tier_rules"] = {}
-                    for tier in ["high", "moderate", "low"]:
+                    for tier in ["high", "moderate", "low", "penny"]:
                         t_g, t_min, t_max, t_req = tier_rules_inputs[tier]
                         cfg["tier_rules"][tier] = {
                             "guidelines": t_g,

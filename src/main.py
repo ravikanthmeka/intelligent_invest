@@ -293,11 +293,12 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
             logger.info(f"Scanning for candidates to fill {slots_available} available slots across risk tiers...")
             
             # Load allocation percentages
-            alloc = config.get("allocation", {"high_risk_pct": 0.30, "moderate_risk_pct": 0.40, "low_risk_pct": 0.30})
+            alloc = config.get("allocation", {"high_risk_pct": 0.30, "moderate_risk_pct": 0.40, "low_risk_pct": 0.25, "penny_risk_pct": 0.05})
             
             for tier, tier_pct in [("high", alloc.get("high_risk_pct", 0.30)), 
                                    ("moderate", alloc.get("moderate_risk_pct", 0.40)), 
-                                   ("low", alloc.get("low_risk_pct", 0.30))]:
+                                   ("low", alloc.get("low_risk_pct", 0.25)),
+                                   ("penny", alloc.get("penny_risk_pct", 0.05))]:
                 
                 # Check if we still have portfolio slots
                 active_positions_count = len(active_trades)
@@ -440,11 +441,16 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                         continue
     
                     # E. Position Sizing & Entry Execution
+                    min_sl_val = 0.10 if tier == "penny" else None
+                    max_sl_val = 0.20 if tier == "penny" else None
+                    
                     sizing = risk_agent.calculate_position_size(
                         portfolio_value=net_liq,
                         entry_price=cand["close"],
                         atr=cand["atr"],
-                        available_tier_capital=available_tier_cap
+                        available_tier_capital=available_tier_cap,
+                        min_stop_loss_pct=min_sl_val,
+                        max_stop_loss_pct=max_sl_val
                     )
     
                     qty = sizing["quantity"]

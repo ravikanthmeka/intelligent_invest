@@ -6,7 +6,8 @@ trading:
 allocation:
   high_risk_pct: 0.30
   moderate_risk_pct: 0.40
-  low_risk_pct: 0.30
+  low_risk_pct: 0.25
+  penny_risk_pct: 0.05
 
 llm:
   provider: "bedrock"  # Options: "bedrock" or "openai"
@@ -87,5 +88,10 @@ tier_rules:
     guidelines: "Low-beta, defensive stocks, utilities, consumer staples, or high-quality dividend payers."
     min_rsi: 40
     max_rsi: 65
+    require_trend: false
+  penny:
+    guidelines: "Promising speculative US penny stocks (under $5/share) with high potential catalysts, good volume, and emerging growth."
+    min_rsi: 30
+    max_rsi: 80
     require_trend: false
 
