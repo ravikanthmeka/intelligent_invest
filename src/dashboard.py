@@ -3,6 +3,7 @@ import sys
 # Add parent directory to sys.path to resolve 'src' imports correctly
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import asyncio
 import json
 import pandas as pd
 import yfinance as yf
