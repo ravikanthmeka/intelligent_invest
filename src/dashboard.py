@@ -451,6 +451,10 @@ with tab1:
             else:
                 with st.spinner(f"Liquidating {sell_symbol} at broker..."):
                     async def liquidate_position():
+                        from src.broker import BrokerAgent
+                        broker = BrokerAgent(host=cfg.get("broker", {}).get("host", "127.0.0.1"),
+                                             port=int(cfg.get("broker", {}).get("port", 4002)),
+                                             client_id=int(cfg.get("broker", {}).get("client_id", 88)))
                         await broker.connect()
                         success = await broker.execute_sell_all(sell_symbol)
                         await broker.disconnect()
