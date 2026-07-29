@@ -98,7 +98,9 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
         tickers=config.get("watchlist", []),
         llm=llm,
         tier_rules=config.get("tier_rules", {}),
-        learnings_feedback=learnings_feedback
+        learnings_feedback=learnings_feedback,
+        dynamic_market_scanning=config.get("trading", {}).get("dynamic_market_scanning", True),
+        blacklist=config.get("blacklist", [])
     )
     tech_agent = TechnicalAgent(llm=llm)
     fund_agent = FundamentalAgent(llm=llm)

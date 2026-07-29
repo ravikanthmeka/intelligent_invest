@@ -11,13 +11,33 @@ from src.skills.risk_management import CalculatePositionSizeSkill, EvaluateActiv
 logger = logging.getLogger("SpecializedAgents")
 
 class MarketScannerAgent(Agent):
-    def __init__(self, tickers: List[str], llm: LLMClient = None, tier_rules: Dict[str, Any] = None, learnings_feedback: str = ""):
+    def __init__(self, tickers: List[str], llm: LLMClient = None, tier_rules: Dict[str, Any] = None, learnings_feedback: str = "", dynamic_market_scanning: bool = True, blacklist: List[str] = None):
         super().__init__(name="MarketScannerAgent", role="Scan watchlist or dynamic suggestions for bullish trading candidates.")
         self.tickers = tickers
         self.llm = llm
         self.tier_rules = tier_rules or {}
         self.learnings_feedback = learnings_feedback
+        self.dynamic_market_scanning = dynamic_market_scanning
+        self.blacklist = blacklist or []
         self.register_skill(CalculateIndicatorsSkill())
+
+    def _fetch_sp500_tickers(self) -> List[str]:
+        try:
+            import urllib.request
+            url = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/master/data/constituents.csv"
+            res = urllib.request.urlopen(url, timeout=5).read().decode('utf-8')
+            lines = res.split('\n')
+            tickers = [line.split(',')[0].strip().upper() for line in lines[1:] if line]
+            # Replace dot with hyphen for Yahoo Finance compatibility (e.g. BRK.B to BRK-B)
+            cleaned = []
+            for t in tickers:
+                t_clean = t.replace(".", "-")
+                if t_clean:
+                    cleaned.append(t_clean)
+            return cleaned
+        except Exception as e:
+            logger.error(f"Error fetching S&P 500 tickers: {e}")
+            return []
 
     def scan(self) -> List[Dict[str, Any]]:
         return self.scan_tier("moderate")
@@ -41,26 +61,56 @@ class MarketScannerAgent(Agent):
 
         tickers = []
         if self.llm:
+            import random
             learnings_str = f"\nPortfolio learnings from past trades:\n{self.learnings_feedback}\n" if self.learnings_feedback else ""
-            prompt = f"""
-            Suggest a list of 16 US stock ticker symbols that represent the '{risk_tier}' risk/return profile:
-            Guidelines: {guidelines}
-            {learnings_str}
-            Important: Ensure the list includes a diverse mix of large-cap leaders and smaller, low-priced growth stocks (under $30/share) that invest heavily in research & development (R&D) or have strong revenue growth scaling despite lower net profit margins.
-            Respond in valid JSON structure:
-            {{
-                "tickers": ["SYMBOL1", "SYMBOL2", ...]
-            }}
-            Do not add any markup or markdown wraps besides the raw JSON.
-            """
+            
+            # Use dynamic market sampling for standard risk tiers if enabled
+            if self.dynamic_market_scanning and risk_tier in ["high", "moderate", "low"]:
+                sp500_list = self._fetch_sp500_tickers()
+                combined_pool = list(set(self.tickers + sp500_list))
+                # Filter out blacklisted tickers
+                combined_pool = [t for t in combined_pool if t not in self.blacklist]
+                
+                # Sample 40 tickers
+                sampled_tickers = random.sample(combined_pool, min(len(combined_pool), 40))
+                logger.info(f"Dynamically sampled 40 broad-market tickers for {risk_tier} screening: {sampled_tickers}")
+                
+                prompt = f"""
+                From the following list of 40 stock tickers, select the 12 most promising tickers that fit the '{risk_tier}' risk profile:
+                Tickers: {sampled_tickers}
+                
+                Guidelines: {guidelines}
+                {learnings_str}
+                Important: Select candidates that represent the target risk profile. For high/moderate risk tiers, prefer candidates with strong growth potential or high R&D intensity.
+                
+                Respond in valid JSON structure:
+                {{
+                    "tickers": ["SYMBOL1", "SYMBOL2", ...]
+                }}
+                Do not add any markup or markdown wraps besides the raw JSON.
+                """
+            else:
+                # Direct suggestion for penny stocks or fallback
+                prompt = f"""
+                Suggest a list of 16 US stock ticker symbols that represent the '{risk_tier}' risk/return profile:
+                Guidelines: {guidelines}
+                {learnings_str}
+                Important: Ensure the list includes a diverse mix of large-cap leaders and smaller, low-priced growth stocks (under $30/share) that invest heavily in research & development (R&D) or have strong revenue growth scaling despite lower net profit margins.
+                Respond in valid JSON structure:
+                {{
+                    "tickers": ["SYMBOL1", "SYMBOL2", ...]
+                }}
+                Do not add any markup or markdown wraps besides the raw JSON.
+                """
+                
             try:
                 response_text = self.llm.call(prompt, system_prompt="You are a professional equity research and portfolio analyst.")
                 import json
                 clean_text = response_text.replace("```json", "").replace("```", "").strip()
                 tickers = json.loads(clean_text).get("tickers", [])
-                logger.info(f"LLM suggested tickers for {risk_tier}: {tickers}")
+                logger.info(f"LLM selected/suggested tickers for {risk_tier}: {tickers}")
             except Exception as e:
-                logger.error(f"Error generating tickers from LLM for {risk_tier}: {e}")
+                logger.error(f"Error generating/selecting tickers from LLM for {risk_tier}: {e}")
         
         if not tickers:
             logger.info(f"Falling back to default watchlist for {risk_tier} scan.")

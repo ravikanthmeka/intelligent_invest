@@ -950,6 +950,8 @@ with tab4:
             with col_gen1:
                 dry_run = st.toggle("Dry Run Mode", value=cfg.get("trading", {}).get("dry_run", True),
                                     help="In Dry Run mode, system analyzes candidates and simulates orders without placing them at the broker.")
+                dynamic_market_scanning = st.toggle("Dynamic Market Scanning (S&P 500)", value=cfg.get("trading", {}).get("dynamic_market_scanning", True),
+                                                    help="Randomly samples candidates from the S&P 500 constituents combined with your watchlist, screening the entire market dynamically over time.")
             with col_gen2:
                 interval_minutes = st.selectbox("Execution Interval (Minutes)", options=[15, 30, 60],
                                                 index=[15, 30, 60].index(cfg.get("scheduler", {}).get("interval_minutes", 30)),
@@ -1087,6 +1089,7 @@ with tab4:
                     if "trading" not in cfg:
                         cfg["trading"] = {}
                     cfg["trading"]["dry_run"] = dry_run
+                    cfg["trading"]["dynamic_market_scanning"] = dynamic_market_scanning
                     
                     if "risk" not in cfg:
                         cfg["risk"] = {}
