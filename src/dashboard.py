@@ -429,6 +429,83 @@ with tab1:
         st.dataframe(df_positions_display, use_container_width=True)
     else:
         st.info("No active positions currently tracked. Run the agent cycle to scan for entries.")
+        
+    if len(active_trades) > 0:
+        st.write("---")
+        st.write("### 🚨 Manual Position Liquidation")
+        st.markdown("Select a currently held stock to sell immediately at market price. This will close the position at the broker, remove it from tracking, and reclaim the cash back into the pool.")
+        
+        col_liq1, col_liq2 = st.columns([2, 1])
+        with col_liq1:
+            sell_symbol = st.selectbox("Position to Liquidate", options=list(active_trades.keys()))
+        with col_liq2:
+            st.write("") # spacing
+            st.write("") # spacing
+            confirm_liq = st.checkbox("Confirm Liquidation", value=False)
+            
+        sell_btn = st.button("Execute Sell-All Order", type="primary")
+        if sell_btn:
+            if not confirm_liq:
+                st.error("Please check the 'Confirm Liquidation' checkbox to proceed.")
+            else:
+                with st.spinner(f"Liquidating {sell_symbol} at broker..."):
+                    async def liquidate_position():
+                        await broker.connect()
+                        success = await broker.execute_sell_all(sell_symbol)
+                        await broker.disconnect()
+                        return success
+                    
+                    try:
+                        loop = asyncio.get_event_loop()
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        
+                    success = loop.run_until_complete(liquidate_position())
+                    if success:
+                        # Move to completed trades
+                        details = active_trades[sell_symbol]
+                        # Fetch latest close price for exit calculation
+                        exit_price = details.get("entry_price", 1.0)
+                        try:
+                            ticker_obj = yf.Ticker(sell_symbol)
+                            hist = ticker_obj.history(period="1d")
+                            if not hist.empty:
+                                exit_price = hist["Close"].iloc[-1]
+                        except Exception:
+                            pass
+                        
+                        qty = details.get("quantity", 0)
+                        pnl = (exit_price - details.get("entry_price", 0.0)) * qty
+                        ret_pct = (exit_price - details.get("entry_price", 1.0)) / details.get("entry_price", 1.0) if details.get("entry_price", 1.0) else 0.0
+                        
+                        completed_trade = {
+                            "symbol": sell_symbol,
+                            "risk_tier": details.get("risk_tier", "moderate"),
+                            "quantity": qty,
+                            "entry_price": details.get("entry_price", 0.0),
+                            "exit_price": exit_price,
+                            "initial_capital": details.get("initial_capital", 0.0),
+                            "purchased_at": details.get("purchased_at", ""),
+                            "sold_at": datetime.now().isoformat(),
+                            "realized_pnl": pnl,
+                            "return_pct": ret_pct,
+                            "exit_reason": "Manual user liquidation from dashboard",
+                            "analysis": details.get("analysis", {})
+                        }
+                        
+                        state = load_state()
+                        if "completed_trades" not in state:
+                            state["completed_trades"] = []
+                        state["completed_trades"].append(completed_trade)
+                        if sell_symbol in state.get("active_trades", {}):
+                            del state["active_trades"][sell_symbol]
+                        save_state(state)
+                        
+                        st.success(f"Successfully sold all shares of {sell_symbol}! Reclaimed funds have been returned to the available pool.")
+                        st.rerun()
+                    else:
+                        st.error(f"Failed to execute sell order for {sell_symbol} at broker. Please check IB Gateway connectivity or logs.")
 
 with tab2:
     st.write("### AI Brain Feed & Portfolio Learnings")
