@@ -268,6 +268,31 @@ def load_system_logs(n=100):
             return [f"Error reading logs: {e}"]
     return ["Log file not found yet. Run the trading system to generate logs."]
 
+def get_latest_sourcing_logs():
+    if os.path.exists(LOG_FILE):
+        try:
+            with open(LOG_FILE, "r") as f:
+                lines = f.readlines()
+            sourcing_lines = []
+            for line in reversed(lines[-300:]):
+                if "broad-market tickers" in line or "selected/suggested tickers" in line:
+                    clean_line = line.strip()
+                    if "[INFO]" in clean_line:
+                        clean_line = clean_line.split("[INFO]")[-1].strip()
+                    # Shorten or format nicely
+                    if "broad-market tickers for" in clean_line:
+                        # e.g.: MarketScannerAgent: Dynamically sampled 40 broad-market tickers for moderate screening: ['A', ...]
+                        clean_line = clean_line.replace("MarketScannerAgent: ", "")
+                    elif "selected/suggested tickers for" in clean_line:
+                        clean_line = clean_line.replace("MarketScannerAgent: ", "")
+                    sourcing_lines.append(clean_line)
+                    if len(sourcing_lines) >= 4:
+                        break
+            return sourcing_lines
+        except Exception:
+            pass
+    return []
+
 # Dashboard App Header
 st.title("📈 Intelligent Invest")
 st.subheader("Multi-Agent Quantitative Trading System Dashboard")
@@ -1284,6 +1309,17 @@ if st.sidebar.button("🔌 Reconnect Broker & Trigger 2FA"):
             st.sidebar.success("Gateway restarted. Check your device for the 2FA push!")
         except Exception as e:
             st.sidebar.error(f"Failed to restart gateway: {e}")
+
+st.sidebar.write("### Sourcing Engine Status")
+is_sp500_active = cfg.get("trading", {}).get("dynamic_market_scanning", True)
+sp500_status = "🟢 ACTIVE" if is_sp500_active else "⚪ Watchlist Only"
+st.sidebar.info(f"🧬 S&P 500 Sampling: **{sp500_status}**\n\n🧠 Penny Stock Brainstorming: **🟢 ACTIVE**")
+
+latest_sourcing = get_latest_sourcing_logs()
+if latest_sourcing:
+    with st.sidebar.expander("🔍 Latest Brainstormed Tickers"):
+        for log in latest_sourcing:
+            st.write(log)
 
 st.sidebar.write("### Agent Control")
 if st.sidebar.button("🚀 Run Trading Cycle Now"):
