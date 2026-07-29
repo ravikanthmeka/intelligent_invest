@@ -989,6 +989,8 @@ with tab4:
                                             value=int(cfg.get("risk", {}).get("max_capital_pct", 0.20) * 100)) / 100.0
                 risk_per_trade_pct = st.slider("Portfolio Risk Per Trade (%)", min_value=0.1, max_value=5.0, step=0.1,
                                                 value=float(cfg.get("risk", {}).get("risk_per_trade_pct", 0.01) * 100)) / 100.0
+                size_by_capital = st.toggle("Fully Invested Mode (Size by Capital)", value=cfg.get("risk", {}).get("size_by_capital", False),
+                                            help="If enabled, sizes buy orders using the maximum capital allowed per stock to deploy all available cash rather than capping by risk amount.")
             with col_risk2:
                 min_stop_loss_pct = st.slider("Minimum Stop Loss Distance (%)", min_value=1.0, max_value=15.0, step=0.5,
                                               value=float(cfg.get("risk", {}).get("min_stop_loss_pct", 0.05) * 100)) / 100.0
@@ -1099,6 +1101,7 @@ with tab4:
                     cfg["risk"]["min_stop_loss_pct"] = min_stop_loss_pct
                     cfg["risk"]["max_stop_loss_pct"] = max_stop_loss_pct
                     cfg["risk"]["trail_trigger_pct"] = trail_trigger_pct
+                    cfg["risk"]["size_by_capital"] = size_by_capital
                     
                     if "allocation" not in cfg:
                         cfg["allocation"] = {}

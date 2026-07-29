@@ -112,7 +112,8 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
         risk_pct=config.get("risk", {}).get("risk_per_trade_pct", 0.01),
         min_stop_loss_pct=config.get("risk", {}).get("min_stop_loss_pct", 0.05),
         max_stop_loss_pct=config.get("risk", {}).get("max_stop_loss_pct", 0.07),
-        trail_trigger_pct=config.get("risk", {}).get("trail_trigger_pct", 0.03)
+        trail_trigger_pct=config.get("risk", {}).get("trail_trigger_pct", 0.03),
+        size_by_capital=config.get("risk", {}).get("size_by_capital", False)
     )
     
     pm = PortfolioManagerAgent(

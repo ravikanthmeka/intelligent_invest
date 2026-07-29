@@ -26,6 +26,7 @@ risk:
   min_stop_loss_pct: 0.05  # Minimum 5% stop loss distance
   max_stop_loss_pct: 0.07  # Maximum 7% stop loss distance
   trail_trigger_pct: 0.03  # Return threshold to activate trailing stop/take profit
+  size_by_capital: false  # If true, size positions to fully deploy available cash instead of limiting by risk amount.
 
 watchlist:
   - "AAPL"

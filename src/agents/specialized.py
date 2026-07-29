@@ -195,7 +195,7 @@ class NewsAgent(Agent):
         return news_sentiment_skill.execute(symbol, news_items, learnings_feedback=learnings_feedback)
 
 class RiskAgent(Agent):
-    def __init__(self, max_positions: int = 5, max_cap_pct: float = 0.20, risk_pct: float = 0.01, min_stop_loss_pct: float = 0.05, max_stop_loss_pct: float = 0.07, trail_trigger_pct: float = 0.03):
+    def __init__(self, max_positions: int = 5, max_cap_pct: float = 0.20, risk_pct: float = 0.01, min_stop_loss_pct: float = 0.05, max_stop_loss_pct: float = 0.07, trail_trigger_pct: float = 0.03, size_by_capital: bool = False):
         super().__init__(name="RiskAgent", role="Calculate position sizing, evaluate risk parameters and active position status.")
         self.max_positions = max_positions
         self.max_cap_pct = max_cap_pct
@@ -203,11 +203,12 @@ class RiskAgent(Agent):
         self.min_stop_loss_pct = min_stop_loss_pct
         self.max_stop_loss_pct = max_stop_loss_pct
         self.trail_trigger_pct = trail_trigger_pct
+        self.size_by_capital = size_by_capital
         
         self.register_skill(CalculatePositionSizeSkill(max_cap_pct=max_cap_pct, risk_pct=risk_pct, min_stop_loss_pct=min_stop_loss_pct, max_stop_loss_pct=max_stop_loss_pct))
         self.register_skill(EvaluateActivePositionSkill(trail_trigger_pct=trail_trigger_pct))
 
-    def calculate_position_size(self, portfolio_value: float, entry_price: float, atr: float, available_tier_capital: float = None) -> Dict[str, Any]:
+    def calculate_position_size(self, portfolio_value: float, entry_price: float, atr: float, available_tier_capital: float = None, min_stop_loss_pct: float = None, max_stop_loss_pct: float = None) -> Dict[str, Any]:
         size_skill = self.get_skill("CalculatePositionSize")
         return size_skill.execute(
             portfolio_value, 
@@ -215,9 +216,10 @@ class RiskAgent(Agent):
             atr, 
             risk_pct=self.risk_pct, 
             max_cap_pct=self.max_cap_pct,
-            min_stop_loss_pct=self.min_stop_loss_pct,
-            max_stop_loss_pct=self.max_stop_loss_pct,
-            available_tier_capital=available_tier_capital
+            min_stop_loss_pct=min_stop_loss_pct if min_stop_loss_pct is not None else self.min_stop_loss_pct,
+            max_stop_loss_pct=max_stop_loss_pct if max_stop_loss_pct is not None else self.max_stop_loss_pct,
+            available_tier_capital=available_tier_capital,
+            size_by_capital=self.size_by_capital
         )
 
     def evaluate_active_position(self, symbol: str, entry_price: float, current_price: float, current_stop: float, atr: float, momentum_is_strong: bool) -> Dict[str, Any]:
