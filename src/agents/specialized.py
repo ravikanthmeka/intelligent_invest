@@ -130,6 +130,11 @@ class MarketScannerAgent(Agent):
                 last_row = df.iloc[-1]
                 
                 close = last_row['Close']
+                
+                # Hard price limit of $5.00 for penny stocks to ensure compliance
+                if risk_tier == "penny" and close >= 5.0:
+                    continue
+                    
                 sma_50 = last_row['SMA_50']
                 sma_200 = last_row['SMA_200']
                 rsi = last_row['RSI']
