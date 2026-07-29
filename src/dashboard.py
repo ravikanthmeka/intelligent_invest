@@ -235,14 +235,27 @@ st.markdown("""
 STATE_FILE = "trading_state.json"
 LOG_FILE = "trading_system.log"
 
-def load_trading_state():
+def load_state():
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, "r") as f:
                 return json.load(f)
         except Exception as e:
             st.error(f"Error loading state file: {e}")
-    return {"active_trades": {}}
+    return {
+        "active_trades": {},
+        "completed_trades": [],
+        "candidate_evaluations": [],
+        "net_liquidation": 100000.0,
+        "cash": 100000.0
+    }
+
+def save_state(state):
+    try:
+        with open(STATE_FILE, "w") as f:
+            json.dump(state, f, indent=2)
+    except Exception as e:
+        st.error(f"Error saving state file: {e}")
 
 # Helper: Load last N lines of logs
 def load_system_logs(n=100):
@@ -260,7 +273,7 @@ st.title("📈 Intelligent Invest")
 st.subheader("Multi-Agent Quantitative Trading System Dashboard")
 
 # Fetch state and configuration
-state = load_trading_state()
+state = load_state()
 cfg = load_config()
 active_trades = state.get("active_trades", {})
 net_liq = state.get("net_liquidation", 100000.0)
