@@ -58,6 +58,10 @@ watchlist:
   - "U"
   - "AFRM"
   - "PATH"
+  - "INDA"
+  - "INDY"
+  - "EPI"
+  - "PIN"
 
 scheduler:
   interval_minutes: 30
