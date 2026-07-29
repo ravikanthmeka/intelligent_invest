@@ -259,6 +259,17 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                     logger.info(f"Raising stop loss for {symbol} to ${new_stop:.2f}")
                     success = await broker.update_stop_loss(symbol, new_stop)
                     if success:
+                        if symbol not in active_trades:
+                            active_trades[symbol] = {
+                                "symbol": symbol,
+                                "risk_tier": "moderate",
+                                "quantity": shares,
+                                "entry_price": avg_cost,
+                                "stop_loss_price": current_stop,
+                                "initial_capital": avg_cost * shares,
+                                "purchased_at": datetime.now().isoformat(),
+                                "analysis": {}
+                            }
                         active_trades[symbol]["stop_loss_price"] = new_stop
                         active_trades[symbol]["updated_at"] = datetime.now().isoformat()
 
