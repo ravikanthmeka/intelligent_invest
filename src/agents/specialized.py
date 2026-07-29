@@ -89,13 +89,24 @@ class MarketScannerAgent(Agent):
                 }}
                 Do not add any markup or markdown wraps besides the raw JSON.
                 """
-            else:
-                # Direct suggestion for penny stocks or fallback
+            elif risk_tier == "penny":
+                # Special prompt for penny stocks: must be strictly under $5/share
                 prompt = f"""
                 Suggest a list of 16 US stock ticker symbols that represent the '{risk_tier}' risk/return profile:
                 Guidelines: {guidelines}
                 {learnings_str}
-                Important: Ensure the list includes a diverse mix of large-cap leaders and smaller, low-priced growth stocks (under $30/share) that invest heavily in research & development (R&D) or have strong revenue growth scaling despite lower net profit margins.
+                Important: Every suggested stock must be a speculative US penny stock trading strictly under $5.00 per share. Prefer companies with high volume, upcoming growth catalysts, and solid emerging business models or research investments.
+                Respond in valid JSON structure:
+                {{
+                    "tickers": ["SYMBOL1", "SYMBOL2", ...]
+                }}
+                Do not add any markup or markdown wraps besides the raw JSON.
+                """
+            else:
+                prompt = f"""
+                Suggest a list of 16 US stock ticker symbols that represent the '{risk_tier}' risk/return profile:
+                Guidelines: {guidelines}
+                {learnings_str}
                 Respond in valid JSON structure:
                 {{
                     "tickers": ["SYMBOL1", "SYMBOL2", ...]
