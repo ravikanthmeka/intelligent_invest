@@ -471,6 +471,17 @@ def compile_learnings_feedback(state: Dict[str, Any]) -> str:
 tab_options, tab1, tab2, tab_candidates, tab_prompts, tab_manual, tab3, tab4 = st.tabs(["📈 Options Trading", "📊 Active Positions", "📜 Trade Log & AI Learnings", "🔍 Candidate Analysis Log", "🛠️ LLM Agent Prompts", "🎯 On-Demand Ticker Target", "📁 System Logs", "⚙️ Settings & Risk Rules"])
 
 with tab_options:
+    hedge_status = state.get("hedge_status", {})
+    st.write("### 🛡️ Portfolio Hedging Status")
+    if hedge_status:
+        if hedge_status.get("needs_hedge"):
+            st.warning(f"**HEDGE ACTIVE:** Targeting {hedge_status.get('hedge_target')} with {hedge_status.get('hedge_type')}. {hedge_status.get('rationale')}")
+        else:
+            st.success(f"**NO HEDGE REQUIRED:** {hedge_status.get('rationale')}")
+    else:
+        st.info("Hedge agent has not evaluated the portfolio yet.")
+        
+    st.write("---")
     st.write("### Active Options Contracts")
     if len(active_options) > 0:
         opt_list = []

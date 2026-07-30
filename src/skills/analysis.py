@@ -601,3 +601,78 @@ class PortfolioCorrelationSkill(Skill):
             }
             
         return {"verdict": "UNCORRELATED", "score": 9.0, "rationale": "Provides good diversification benefits."}
+
+class VolatilityArbitrageSkill(Skill):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="VolatilityArbitrage", description="Evaluates IV Rank for options strategies.")
+        self.llm = llm
+
+    def execute(self, symbol: str, iv_data: Dict[str, Any], direction_bias: str = "BULLISH") -> Dict[str, Any]:
+        iv_rank = iv_data.get("iv_rank", 50)
+        
+        # User constraint: ONLY debit strategies allowed.
+        # So if IV Rank is high, options are expensive, we might avoid buying.
+        # If IV Rank is low, options are cheap, great for buying.
+        if iv_rank > 70:
+            return {
+                "verdict": "IV_TOO_HIGH",
+                "score": 3.0,
+                "rationale": f"IV Rank is {iv_rank:.1f}. Options are too expensive for debit strategies. Avoid buying.",
+                "recommended_strategy": "NONE"
+            }
+        else:
+            strategy = "LONG_CALL" if direction_bias == "BULLISH" else "LONG_PUT"
+            return {
+                "verdict": "FAVORABLE_IV",
+                "score": 9.0 if iv_rank < 30 else 7.0,
+                "rationale": f"IV Rank is {iv_rank:.1f}. Premium is relatively cheap. Favor {strategy}.",
+                "recommended_strategy": strategy
+            }
+
+class EarningsCatalystSkill(Skill):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="EarningsCatalyst", description="Evaluates potential earnings moves.")
+        self.llm = llm
+
+    def execute(self, symbol: str, earnings_data: Dict[str, Any]) -> Dict[str, Any]:
+        if not earnings_data:
+            return {"verdict": "UNKNOWN", "score": 5.0, "rationale": "No earnings data."}
+            
+        growth = earnings_data.get("earnings_growth", 0.0)
+        surprise = earnings_data.get("recent_surprise_pct", 0.0)
+        
+        score = 5.0
+        verdict = "NEUTRAL"
+        if growth > 0.15 and surprise > 0.05:
+            score = 9.0
+            verdict = "BULLISH_CATALYST"
+        elif growth < 0 and surprise < -0.05:
+            score = 2.0
+            verdict = "BEARISH_CATALYST"
+            
+        return {
+            "verdict": verdict,
+            "score": score,
+            "rationale": f"Earnings growth: {growth*100:.1f}%. Recent surprise: {surprise*100:.1f}%."
+        }
+
+class PortfolioHedgingSkill(Skill):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="PortfolioHedging", description="Evaluates portfolio hedging needs.")
+        self.llm = llm
+
+    def execute(self, macro_posture: str, active_exposure_pct: float) -> Dict[str, Any]:
+        if macro_posture in ["BEARISH", "CRASH_WARNING"] and active_exposure_pct > 0.40:
+            return {
+                "needs_hedge": True,
+                "hedge_target": "SPY",
+                "hedge_type": "LONG_PUT",
+                "rationale": f"Macro is {macro_posture} and active exposure is {active_exposure_pct*100:.1f}%. Hedge recommended."
+            }
+        
+        return {
+            "needs_hedge": False,
+            "hedge_target": "NONE",
+            "hedge_type": "NONE",
+            "rationale": f"Macro is {macro_posture} with {active_exposure_pct*100:.1f}% exposure. No macro hedge needed."
+        }

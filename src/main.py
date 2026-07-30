@@ -29,7 +29,10 @@ from src.agents.specialized import (
     InsiderTradingAgent,
     RetailSentimentAgent,
     DividendIncomeAgent,
-    CorrelationAgent
+    CorrelationAgent,
+    VolatilityArbitrageAgent,
+    EarningsCatalystAgent,
+    PortfolioHedgingAgent
 )
 
 # Setup logging
@@ -124,6 +127,9 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
     retail_agent = RetailSentimentAgent(llm=llm)
     dividend_agent = DividendIncomeAgent(llm=llm)
     corr_agent = CorrelationAgent(llm=llm)
+    vol_arb_agent = VolatilityArbitrageAgent(llm=llm)
+    earnings_agent = EarningsCatalystAgent(llm=llm)
+    hedge_agent = PortfolioHedgingAgent(llm=llm)
     
     risk_agent = RiskAgent(
         max_positions=config.get("risk", {}).get("max_positions", 5),
@@ -187,6 +193,12 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
         
         state["net_liquidation"] = net_liq
         state["cash"] = cash
+
+        # Portfolio Hedging Evaluation
+        active_exposure_pct = (net_liq - cash) / net_liq if net_liq > 0 else 0.0
+        hedge_decision = hedge_agent.evaluate(macro_posture, active_exposure_pct)
+        logger.info(f"Hedge Evaluation: {hedge_decision}")
+        state["hedge_status"] = hedge_decision
 
         # Fetch actual broker positions
         broker_positions = await broker.get_positions()
@@ -629,8 +641,30 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                             }
                         }
                         
-                    # F. Speculative Options Execution
+                    # F. Speculative Options Execution (Advanced Agents)
+                    earnings_analysis = earnings_agent.analyze(symbol)
+                    earn_verd = earnings_analysis.get("verdict", "NEUTRAL")
+                    
+                    vol_arb_analysis = vol_arb_agent.analyze(symbol, direction_bias="BULLISH")
+                    vol_verd = vol_arb_analysis.get("verdict", "FAVORABLE_IV")
+                    
+                    eval_entry["analysis"]["earnings_verdict"] = earn_verd
+                    eval_entry["analysis"]["volatility_verdict"] = vol_verd
+
+                    is_options_candidate = False
                     if tier in ["high", "moderate"] and tech_verd == "BULLISH" and opt_verd == "BULLISH" and news_score is not None and news_score >= 6.5:
+                        is_options_candidate = True
+                    elif tier in ["high", "moderate"] and earn_verd == "BULLISH_CATALYST":
+                        logger.info(f"Strong Bullish Earnings Catalyst detected for {symbol}!")
+                        is_options_candidate = True
+                    elif tier in ["high", "moderate"] and ('ins_verd' in locals() and ins_verd == "BULLISH" or 'ret_verd' in locals() and ret_verd == "HIGH_MOMENTUM"):
+                        is_options_candidate = True
+                        
+                    if is_options_candidate and vol_verd == "IV_TOO_HIGH":
+                        logger.info(f"Skipping options for {symbol}: IV is too high for debit strategies.")
+                        is_options_candidate = False
+
+                    if is_options_candidate:
                         options_pct = config.get("allocation", {}).get("options_pct", 0.20)
                         target_opt_cap = net_liq * options_pct
                         active_opts = state.get("active_options", {})

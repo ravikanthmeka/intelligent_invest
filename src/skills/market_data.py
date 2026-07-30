@@ -373,3 +373,68 @@ class CalculateCorrelationSkill(Skill):
         except Exception as e:
             logger.error(f"Error calculating correlation for {candidate}: {e}")
             return {}
+
+class FetchIVRankSkill(Skill):
+    def __init__(self):
+        super().__init__(
+            name="FetchIVRank",
+            description="Fetches the implied volatility data to approximate IV Rank."
+        )
+
+    def execute(self, symbol: str) -> Dict[str, Any]:
+        try:
+            ticker = yf.Ticker(symbol)
+            # Use current implied volatility from option chain for near term
+            exps = ticker.options
+            if not exps:
+                return {"iv_rank": 50, "implied_volatility": 0.0}
+            
+            # Fetch near term options chain
+            chain = ticker.option_chain(exps[0])
+            calls = chain.calls
+            if calls.empty:
+                return {"iv_rank": 50, "implied_volatility": 0.0}
+                
+            # Get atm implied volatility
+            current_price = ticker.history(period="1d")['Close'].iloc[-1]
+            atm_call = calls.iloc[(calls['strike'] - current_price).abs().argsort()[:1]]
+            current_iv = atm_call['impliedVolatility'].values[0]
+            
+            # Very rough heuristic for IV rank without historical IV data
+            # Typically 0.2 is low, 0.5 is high for normal stocks
+            iv_rank = min(max((current_iv - 0.1) / 0.8 * 100, 0), 100)
+            
+            return {
+                "iv_rank": iv_rank,
+                "implied_volatility": current_iv
+            }
+        except Exception as e:
+            logger.error(f"Error fetching IV data for {symbol}: {e}")
+            return {"iv_rank": 50, "implied_volatility": 0.0}
+
+class FetchEarningsCatalystDataSkill(Skill):
+    def __init__(self):
+        super().__init__(
+            name="FetchEarningsCatalystData",
+            description="Fetches recent earnings surprises and upcoming earnings estimates."
+        )
+
+    def execute(self, symbol: str) -> Dict[str, Any]:
+        try:
+            ticker = yf.Ticker(symbol)
+            info = ticker.info
+            earnings_history = ticker.earnings_history if hasattr(ticker, 'earnings_history') else pd.DataFrame()
+            
+            recent_surprise = 0.0
+            if not earnings_history.empty and 'epsSurprisePercent' in earnings_history.columns:
+                recent_surprise = earnings_history['epsSurprisePercent'].iloc[-1]
+                
+            return {
+                "forward_eps": info.get("forwardEps", 0.0),
+                "trailing_eps": info.get("trailingEps", 0.0),
+                "recent_surprise_pct": recent_surprise,
+                "earnings_growth": info.get("earningsGrowth", 0.0)
+            }
+        except Exception as e:
+            logger.error(f"Error fetching earnings catalyst data for {symbol}: {e}")
+            return {}

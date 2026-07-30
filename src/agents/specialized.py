@@ -4,8 +4,8 @@ import pandas as pd
 from typing import List, Dict, Any, Tuple, Optional
 from src.llm import LLMClient
 from src.agents.base import Agent
-from src.skills.market_data import CalculateIndicatorsSkill, FetchEarningsCalendarSkill, FetchRecentNewsSkill, FetchMacroDataSkill, FetchSectorETFDataSkill, FetchQualitativeDataSkill, FetchOptionsChainSkill, FetchInsiderTradingSkill, FetchDividendDataSkill, CalculateCorrelationSkill
-from src.skills.analysis import TechnicalAnalysisSkill, FundamentalAnalysisSkill, NewsSentimentSkill, GrowthRnDEvaluationSkill, MacroEconomicAnalysisSkill, GlobalSectorRotationSkill, QualitativeAnalysisSkill, HistoricalAnalogSkill, OptionsFlowAnalysisSkill, InsiderTradingAnalysisSkill, RetailSentimentAnalysisSkill, DividendIncomeAnalysisSkill, PortfolioCorrelationSkill
+from src.skills.market_data import CalculateIndicatorsSkill, FetchEarningsCalendarSkill, FetchRecentNewsSkill, FetchMacroDataSkill, FetchSectorETFDataSkill, FetchQualitativeDataSkill, FetchOptionsChainSkill, FetchInsiderTradingSkill, FetchDividendDataSkill, CalculateCorrelationSkill, FetchIVRankSkill, FetchEarningsCatalystDataSkill
+from src.skills.analysis import TechnicalAnalysisSkill, FundamentalAnalysisSkill, NewsSentimentSkill, GrowthRnDEvaluationSkill, MacroEconomicAnalysisSkill, GlobalSectorRotationSkill, QualitativeAnalysisSkill, HistoricalAnalogSkill, OptionsFlowAnalysisSkill, InsiderTradingAnalysisSkill, RetailSentimentAnalysisSkill, DividendIncomeAnalysisSkill, PortfolioCorrelationSkill, VolatilityArbitrageSkill, EarningsCatalystSkill, PortfolioHedgingSkill
 from src.skills.risk_management import CalculatePositionSizeSkill, EvaluateActivePositionSkill
 
 logger = logging.getLogger("SpecializedAgents")
@@ -413,3 +413,40 @@ class CorrelationAgent(Agent):
     def analyze(self, symbol: str, active_symbols: List[str], max_threshold: float = 0.75) -> Dict[str, Any]:
         corr_data = self.get_skill("CalculateCorrelation").execute(symbol, active_symbols)
         return self.get_skill("PortfolioCorrelation").execute(symbol, corr_data, max_threshold)
+
+class VolatilityArbitrageAgent(Agent):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="VolatilityArbitrageAgent", role="Evaluates IV Rank to suggest debit or credit option strategies.")
+        self.llm = llm
+        self.register_skill(FetchIVRankSkill())
+        self.register_skill(VolatilityArbitrageSkill(llm))
+
+    def analyze(self, symbol: str, direction_bias: str = "BULLISH") -> Dict[str, Any]:
+        iv_data = self.get_skill("FetchIVRank").execute(symbol)
+        return self.get_skill("VolatilityArbitrage").execute(symbol, iv_data, direction_bias)
+
+class EarningsCatalystAgent(Agent):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="EarningsCatalystAgent", role="Evaluates near-term earnings events for massive outlier moves.")
+        self.llm = llm
+        self.register_skill(FetchEarningsCalendarSkill())
+        self.register_skill(FetchEarningsCatalystDataSkill())
+        self.register_skill(EarningsCatalystSkill(llm))
+
+    def analyze(self, symbol: str) -> Dict[str, Any]:
+        # Check if earnings are coming up soon (e.g. within 14 days)
+        safe, reason = self.get_skill("FetchEarningsCalendar").execute(symbol, days_range=14)
+        if safe:
+            return {"verdict": "NO_EARNINGS", "score": 0.0, "rationale": "No near term earnings catalyst."}
+            
+        data = self.get_skill("FetchEarningsCatalystData").execute(symbol)
+        return self.get_skill("EarningsCatalyst").execute(symbol, data)
+
+class PortfolioHedgingAgent(Agent):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="PortfolioHedgingAgent", role="Evaluates portfolio delta/beta and macro state for hedging.")
+        self.llm = llm
+        self.register_skill(PortfolioHedgingSkill(llm))
+
+    def evaluate(self, macro_posture: str, active_exposure_pct: float) -> Dict[str, Any]:
+        return self.get_skill("PortfolioHedging").execute(macro_posture, active_exposure_pct)
