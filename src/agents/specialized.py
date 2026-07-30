@@ -100,7 +100,7 @@ class MarketScannerAgent(Agent):
                 Guidelines: {guidelines}
                 {learnings_str}
                 {macro_str}
-                Important: Every suggested stock must be a speculative US penny stock trading strictly under $5.00 per share. Prefer companies with high volume, upcoming growth catalysts, and solid emerging business models or research investments.
+                Important: Every suggested stock must be a speculative US penny stock trading strictly under $5.00 per share. Prefer companies with HIGH AVERAGE DAILY VOLUME (>1 Million shares), upcoming growth catalysts, and solid emerging business models or research investments.
                 Respond in valid JSON structure:
                 {{
                     "tickers": ["SYMBOL1", "SYMBOL2", ...]
@@ -147,10 +147,17 @@ class MarketScannerAgent(Agent):
                 last_row = df.iloc[-1]
                 
                 close = last_row['Close']
+                avg_vol = df['Volume'].rolling(20).mean().iloc[-1]
                 
-                # Hard price limit of $5.00 for penny stocks to ensure compliance
-                if risk_tier == "penny" and close >= 5.0:
-                    continue
+                # Hard price limit of $5.00 and high volume for penny stocks to ensure compliance
+                if risk_tier == "penny":
+                    if close >= 5.0:
+                        logger.info(f"Filtered out {symbol} from penny tier: price {close} >= 5.0")
+                        continue
+                    min_vol = tier_conf.get("min_volume", 1000000)
+                    if avg_vol < min_vol:
+                        logger.info(f"Filtered out {symbol} from penny tier: avg_vol {avg_vol} < {min_vol}")
+                        continue
                     
                 sma_50 = last_row['SMA_50']
                 sma_200 = last_row['SMA_200']
@@ -169,8 +176,8 @@ class MarketScannerAgent(Agent):
                         "sma_200": sma_200,
                         "atr": last_row['ATR'],
                         "volume": last_row['Volume'],
-                        "avg_volume": df['Volume'].rolling(20).mean().iloc[-1],
-                        "volume_spike": last_row['Volume'] > (df['Volume'].rolling(20).mean().iloc[-1] * 1.2)
+                        "avg_volume": avg_vol,
+                        "volume_spike": last_row['Volume'] > (avg_vol * 1.2)
                     })
             except Exception as e:
                 logger.error(f"Error scanning {symbol}: {e}")

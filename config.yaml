@@ -103,8 +103,8 @@ tier_rules:
     max_rsi: 65
     require_trend: false
   penny:
-    guidelines: "Promising speculative US penny stocks (under $5/share) with high potential catalysts, good volume, and emerging growth."
+    guidelines: "Promising speculative US penny stocks (under $5/share). MUST have high average daily volume (>1M shares), high potential catalysts, and emerging growth."
     min_rsi: 30
     max_rsi: 80
     require_trend: false
-
+    min_volume: 1000000
