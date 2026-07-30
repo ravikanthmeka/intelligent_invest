@@ -478,7 +478,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                                 # E. Qualitative Research Check
                                 min_qual = rules_cfg.get("min_qualitative_score", 6.0)
                                 qual_analysis = qual_agent.analyze(symbol)
-                                qual_score = qual_analysis.get("qualitative_score", 5.0)
+                                qual_score = qual_analysis.get("score", 5.0)
                                 qual_verd = qual_analysis.get("verdict", "NEUTRAL")
                                 logger.info(f"Qualitative Verdict for {symbol}: {qual_verd} | Score: {qual_score}/10")
                                 
@@ -503,7 +503,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                                             sma_50=cand["sma_50"],
                                             sma_200=cand["sma_200"]
                                         )
-                                        hist_score = hist_analysis.get("historical_score", 5.0)
+                                        hist_score = hist_analysis.get("score", 5.0)
                                         hist_verd = hist_analysis.get("verdict", "NEUTRAL")
                                         logger.info(f"Historical Analog Verdict for {symbol}: {hist_verd} | Score: {hist_score}/10")
                                         
