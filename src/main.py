@@ -558,6 +558,27 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                                                                 logger.info(f"Skipping {symbol}: Dividend yield insufficient for low-risk tier.")
                                                                 status = f"Skipped: Dividend Yield ({div_verd})"
                     
+                    # Options Evaluation (Advanced Agents)
+                    earnings_analysis = earnings_agent.analyze(symbol)
+                    earn_verd = earnings_analysis.get("verdict", "NEUTRAL")
+                    
+                    vol_arb_analysis = vol_arb_agent.analyze(symbol, direction_bias="BULLISH")
+                    vol_verd = vol_arb_analysis.get("verdict", "FAVORABLE_IV")
+
+                    is_options_candidate = False
+                    opt_verd_val = opt_verd if 'opt_verd' in locals() else None
+                    if tier in ["high", "moderate"] and tech_verd == "BULLISH" and opt_verd_val == "BULLISH" and news_score is not None and news_score >= 6.5:
+                        is_options_candidate = True
+                    elif tier in ["high", "moderate"] and earn_verd == "BULLISH_CATALYST":
+                        logger.info(f"Strong Bullish Earnings Catalyst detected for {symbol}!")
+                        is_options_candidate = True
+                    elif tier in ["high", "moderate"] and (('ins_verd' in locals() and ins_verd == "BULLISH") or ('ret_verd' in locals() and ret_verd == "HIGH_MOMENTUM")):
+                        is_options_candidate = True
+                        
+                    if is_options_candidate and vol_verd == "IV_TOO_HIGH":
+                        logger.info(f"Skipping options for {symbol}: IV is too high for debit strategies.")
+                        is_options_candidate = False
+                    
                     # Log candidate evaluation snapshot
                     eval_entry = {
                         "symbol": symbol,
@@ -586,9 +607,58 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                             "ins_score": ins_score if 'ins_score' in locals() else None,
                             "ins_verdict": ins_verd if 'ins_verd' in locals() else None,
                             "ret_verdict": ret_verd if 'ret_verd' in locals() else None,
-                            "div_verdict": div_verd if 'div_verd' in locals() else None
+                            "div_verdict": div_verd if 'div_verd' in locals() else None,
+                            "earnings_verdict": earn_verd,
+                            "volatility_verdict": vol_verd
                         }
                     }
+
+                    if is_options_candidate:
+                        options_pct = config.get("allocation", {}).get("options_pct", 0.20)
+                        target_opt_cap = net_liq * options_pct
+                        active_opts = state.get("active_options", {})
+                        deployed_opt_cap = sum(details.get("initial_capital", 0.0) for details in active_opts.values())
+                        available_opt_cap = target_opt_cap - deployed_opt_cap
+
+                        if available_opt_cap > 200:
+                            logger.info(f"Candidate {symbol} selected for options... Evaluating Speculative Call Option...")
+                            from src.skills.market_data import SelectSpeculativeOptionSkill
+                            opt_skill = SelectSpeculativeOptionSkill()
+                            opt_data = opt_skill.execute(symbol, cand["close"], bias="bullish")
+
+                            if opt_data and "expiration" in opt_data:
+                                eval_entry["analysis"]["considered_options"] = opt_data.get("considered_options", [])
+                                opt_price = opt_data.get("ask", 0) or opt_data.get("lastPrice", 0)
+                                if opt_price > 0:
+                                    # Risk max 25% of options cap per trade or $2000, whichever is smaller
+                                    trade_cap = min(available_opt_cap * 0.25, 2000.0)
+                                    qty_opts = int(trade_cap / (opt_price * 100))
+                                    if qty_opts > 0:
+                                        logger.info(f"Executing Speculative Call Option for {symbol}: {qty_opts} contracts of {opt_data['expiration']} ${opt_data['strike']} Call at ~${opt_price}")
+                                        opt_order_id = await broker.execute_option_buy(
+                                            symbol=symbol,
+                                            expiration=opt_data["expiration"],
+                                            strike=opt_data["strike"],
+                                            right=opt_data["right"],
+                                            quantity=qty_opts
+                                        )
+                                        if opt_order_id:
+                                            opt_key = f"{symbol}_{opt_data['expiration']}_{opt_data['strike']}{opt_data['right']}"
+                                            active_opts[opt_key] = {
+                                                "symbol": symbol,
+                                                "expiration": opt_data["expiration"],
+                                                "strike": opt_data["strike"],
+                                                "right": opt_data["right"],
+                                                "quantity": qty_opts,
+                                                "entry_price": opt_price,
+                                                "initial_capital": qty_opts * opt_price * 100,
+                                                "purchased_at": datetime.now().isoformat(),
+                                                "order_id": opt_order_id,
+                                                "analysis": eval_entry["analysis"]
+                                            }
+                                            state["active_options"] = active_opts
+                                            save_state(state)
+
                     evaluations.append(eval_entry)
                     
                     if status != "Passed":
@@ -641,74 +711,9 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                             }
                         }
                         
-                    # F. Speculative Options Execution (Advanced Agents)
-                    earnings_analysis = earnings_agent.analyze(symbol)
-                    earn_verd = earnings_analysis.get("verdict", "NEUTRAL")
-                    
-                    vol_arb_analysis = vol_arb_agent.analyze(symbol, direction_bias="BULLISH")
-                    vol_verd = vol_arb_analysis.get("verdict", "FAVORABLE_IV")
-                    
-                    eval_entry["analysis"]["earnings_verdict"] = earn_verd
-                    eval_entry["analysis"]["volatility_verdict"] = vol_verd
-
-                    is_options_candidate = False
-                    if tier in ["high", "moderate"] and tech_verd == "BULLISH" and opt_verd == "BULLISH" and news_score is not None and news_score >= 6.5:
-                        is_options_candidate = True
-                    elif tier in ["high", "moderate"] and earn_verd == "BULLISH_CATALYST":
-                        logger.info(f"Strong Bullish Earnings Catalyst detected for {symbol}!")
-                        is_options_candidate = True
-                    elif tier in ["high", "moderate"] and ('ins_verd' in locals() and ins_verd == "BULLISH" or 'ret_verd' in locals() and ret_verd == "HIGH_MOMENTUM"):
-                        is_options_candidate = True
+                            }
+                        }
                         
-                    if is_options_candidate and vol_verd == "IV_TOO_HIGH":
-                        logger.info(f"Skipping options for {symbol}: IV is too high for debit strategies.")
-                        is_options_candidate = False
-
-                    if is_options_candidate:
-                        options_pct = config.get("allocation", {}).get("options_pct", 0.20)
-                        target_opt_cap = net_liq * options_pct
-                        active_opts = state.get("active_options", {})
-                        deployed_opt_cap = sum(details.get("initial_capital", 0.0) for details in active_opts.values())
-                        available_opt_cap = target_opt_cap - deployed_opt_cap
-
-                        if available_opt_cap > 200:
-                            logger.info(f"Candidate {symbol} is highly rated (Tech: BULLISH, Options: BULLISH, News: {news_score}). Evaluating for Speculative Call Option...")
-                            from src.skills.market_data import SelectSpeculativeOptionSkill
-                            opt_skill = SelectSpeculativeOptionSkill()
-                            opt_data = opt_skill.execute(symbol, cand["close"], bias="bullish")
-
-                            if opt_data and "expiration" in opt_data:
-                                eval_entry["analysis"]["considered_options"] = opt_data.get("considered_options", [])
-                                opt_price = opt_data.get("ask", 0) or opt_data.get("lastPrice", 0)
-                                if opt_price > 0:
-                                    # Risk max 25% of options cap per trade or $2000, whichever is smaller
-                                    trade_cap = min(available_opt_cap * 0.25, 2000.0)
-                                    qty_opts = int(trade_cap / (opt_price * 100))
-                                    if qty_opts > 0:
-                                        logger.info(f"Executing Speculative Call Option for {symbol}: {qty_opts} contracts of {opt_data['expiration']} ${opt_data['strike']} Call at ~${opt_price}")
-                                        opt_order_id = await broker.execute_option_buy(
-                                            symbol=symbol,
-                                            expiration=opt_data["expiration"],
-                                            strike=opt_data["strike"],
-                                            right=opt_data["right"],
-                                            quantity=qty_opts
-                                        )
-                                        if opt_order_id:
-                                            opt_key = f"{symbol}_{opt_data['expiration']}_{opt_data['strike']}{opt_data['right']}"
-                                            active_opts[opt_key] = {
-                                                "symbol": symbol,
-                                                "expiration": opt_data["expiration"],
-                                                "strike": opt_data["strike"],
-                                                "right": opt_data["right"],
-                                                "quantity": qty_opts,
-                                                "entry_price": opt_price,
-                                                "initial_capital": qty_opts * opt_price * 100,
-                                                "purchased_at": datetime.now().isoformat(),
-                                                "order_id": opt_order_id,
-                                                "analysis": eval_entry["analysis"]
-                                            }
-                                            state["active_options"] = active_opts
-                                            save_state(state)
                         slots_available -= 1
                         available_tier_cap -= sizing["capital_required"]
                         eval_entry["status"] = "Purchased (Growth Play)" if is_growth_reinvestment_play else "Purchased"
