@@ -466,6 +466,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                                         
                                         logger.info(f"Growth Agent Verdict for {symbol}: {growth_verd} | Score: {growth_score}/10 | R&D Intensity: {rnd_intensity_pct:.1f}% | Revenue Growth: {revenue_growth_pct:.1f}%")
                                         
+                                        
                                         if (growth_verd == "FAVORABLE" and 
                                             growth_score >= min_growth_score and 
                                             (rnd_intensity_pct / 100.0) >= min_rnd_intensity and 
@@ -474,21 +475,25 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                                             logger.info(f"Overriding traditional fundamental filter for {symbol}: Qualified as high-reinvestment growth play.")
                                             is_growth_reinvestment_play = True
                                 
-                                if (fund_verd == "UNFAVORABLE" or fund_score < min_fund) and not is_growth_reinvestment_play:
+                                # E. Qualitative Research Check
+                                min_qual = rules_cfg.get("min_qualitative_score", 6.0)
+                                qual_analysis = qual_agent.analyze(symbol)
+                                qual_score = qual_analysis.get("qualitative_score", 5.0)
+                                qual_verd = qual_analysis.get("verdict", "NEUTRAL")
+                                logger.info(f"Qualitative Verdict for {symbol}: {qual_verd} | Score: {qual_score}/10")
+                                
+                                is_qual_play = False
+                                if qual_verd in ["HIGH_QUALITY", "STRONG"] and qual_score >= 8.0:
+                                    logger.info(f"Overriding traditional fundamental filter for {symbol}: Qualified as high-quality qualitative play.")
+                                    is_qual_play = True
+                                
+                                if (fund_verd == "UNFAVORABLE" or fund_score < min_fund) and not (is_growth_reinvestment_play or is_qual_play):
                                     logger.info(f"Skipping {symbol}: Unfavorable fundamentals.")
                                     status = f"Skipped: Fundamental Strength ({fund_verd}, Score: {fund_score})"
+                                elif qual_verd == "POOR" or qual_score < min_qual:
+                                    logger.info(f"Skipping {symbol}: Qualitative strength insufficient.")
+                                    status = f"Skipped: Qualitative Research ({qual_verd}, Score: {qual_score})"
                                 else:
-                                    # E. Qualitative Research Check
-                                    min_qual = rules_cfg.get("min_qualitative_score", 6.0)
-                                    qual_analysis = qual_agent.analyze(symbol)
-                                    qual_score = qual_analysis.get("qualitative_score", 5.0)
-                                    qual_verd = qual_analysis.get("verdict", "NEUTRAL")
-                                    logger.info(f"Qualitative Verdict for {symbol}: {qual_verd} | Score: {qual_score}/10")
-                                    
-                                    if qual_verd == "POOR" or qual_score < min_qual:
-                                        logger.info(f"Skipping {symbol}: Qualitative strength insufficient.")
-                                        status = f"Skipped: Qualitative Research ({qual_verd}, Score: {qual_score})"
-                                    else:
                                         # F. Historical Analog Check
                                         min_hist = rules_cfg.get("min_historical_score", 6.0)
                                         hist_analysis = hist_agent.analyze(
@@ -584,7 +589,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                         "symbol": symbol,
                         "risk_tier": tier,
                         "timestamp": datetime.now().isoformat(),
-                        "status": status if status != "Passed" else ("Passed (Growth Play)" if is_growth_reinvestment_play else "Passed"),
+                        "status": status if status != "Passed" else ("Passed (Growth Play)" if is_growth_reinvestment_play else ("Passed (Qual Play)" if 'is_qual_play' in locals() and is_qual_play else "Passed")),
                         "analysis": {
                             "earnings_checked": "PASSED" if passed_shield else "TRIGGERED",
                             "news_score": news_score,
@@ -592,7 +597,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                             "tech_score": tech_score,
                             "tech_verdict": tech_verd,
                             "fund_score": fund_score if not is_growth_reinvestment_play else growth_score,
-                            "fund_verdict": fund_verd if not is_growth_reinvestment_play else f"GROWTH_PLAY ({growth_verd})",
+                            "fund_verdict": fund_verd if not (is_growth_reinvestment_play or ('is_qual_play' in locals() and is_qual_play)) else (f"GROWTH_PLAY ({growth_verd})" if is_growth_reinvestment_play else f"QUAL_PLAY ({qual_verd})"),
                             "growth_evaluated": "YES" if (tier in ["high", "moderate"] and growth_agent_enabled and fund_score is not None and (fund_verd == "UNFAVORABLE" or fund_score < min_fund)) else "NO",
                             "rnd_intensity_pct": rnd_intensity_pct,
                             "revenue_growth_pct": revenue_growth_pct,
@@ -702,7 +707,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                                 "tech_score": tech_score,
                                 "tech_verdict": tech_verd,
                                 "fund_score": fund_score if not is_growth_reinvestment_play else growth_score,
-                                "fund_verdict": fund_verd if not is_growth_reinvestment_play else f"GROWTH_PLAY ({growth_verd})",
+                                "fund_verdict": fund_verd if not (is_growth_reinvestment_play or ('is_qual_play' in locals() and is_qual_play)) else (f"GROWTH_PLAY ({growth_verd})" if is_growth_reinvestment_play else f"QUAL_PLAY ({qual_verd})"),
                                 "qual_score": qual_score,
                                 "hist_score": hist_score,
                                 "rnd_intensity_pct": rnd_intensity_pct,
@@ -713,7 +718,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                         
                         slots_available -= 1
                         available_tier_cap -= sizing["capital_required"]
-                        eval_entry["status"] = "Purchased (Growth Play)" if is_growth_reinvestment_play else "Purchased"
+                        eval_entry["status"] = "Purchased (Growth Play)" if is_growth_reinvestment_play else ("Purchased (Qual Play)" if 'is_qual_play' in locals() and is_qual_play else "Purchased")
 
             # Save state after scans and executions
             state["active_trades"] = active_trades
