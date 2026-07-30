@@ -32,7 +32,8 @@ from src.agents.specialized import (
     CorrelationAgent,
     VolatilityArbitrageAgent,
     EarningsCatalystAgent,
-    PortfolioHedgingAgent
+    PortfolioHedgingAgent,
+    MergerArbitrageAgent
 )
 
 # Setup logging
@@ -130,6 +131,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
     vol_arb_agent = VolatilityArbitrageAgent(llm=llm)
     earnings_agent = EarningsCatalystAgent(llm=llm)
     hedge_agent = PortfolioHedgingAgent(llm=llm)
+    merger_arb_agent = MergerArbitrageAgent(llm=llm)
     
     risk_agent = RiskAgent(
         max_positions=config.get("risk", {}).get("max_positions", 5),
@@ -358,6 +360,66 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
             # Load allocation percentages
             alloc = config.get("allocation", {"high_risk_pct": 0.30, "moderate_risk_pct": 0.40, "low_risk_pct": 0.25, "penny_risk_pct": 0.05})
             
+            # --- 0. ARBITRAGE PRIORITY SCAN ---
+            logger.info("--- Starting Arbitrage Priority Scan ---")
+            watchlist = config.get("watchlist", [])
+            moderate_pct = alloc.get("moderate_risk_pct", 0.40)
+            target_arb_cap = net_liq * moderate_pct
+            deployed_mod_cap = sum(details.get("initial_capital", 0.0) for details in active_trades.values() if details.get("risk_tier", "moderate") == "moderate")
+            available_arb_cap = target_arb_cap - deployed_mod_cap
+            
+            if available_arb_cap > 500:
+                for symbol in watchlist:
+                    if symbol in active_trades or slots_available <= 0:
+                        continue
+                        
+                    try:
+                        ticker_obj = yf.Ticker(symbol)
+                        hist = ticker_obj.history(period="1d")
+                        if hist.empty:
+                            continue
+                        current_price = hist['Close'].iloc[-1]
+                    except Exception:
+                        continue
+                        
+                    arb_analysis = merger_arb_agent.analyze(symbol, current_price)
+                    if arb_analysis.get("is_actionable"):
+                        logger.warning(f"!!! ARBITRAGE OPPORTUNITY FOUND for {symbol} !!!")
+                        logger.info(f"Deal Price: ${arb_analysis.get('deal_price')}, Current: ${current_price}, Spread: {arb_analysis.get('spread_pct', 0)*100:.1f}%")
+                        logger.info(f"Rationale: {arb_analysis.get('rationale')}")
+                        
+                        sizing = risk_agent.calculate_position_size(
+                            portfolio_value=net_liq,
+                            entry_price=current_price,
+                            atr=current_price * 0.02, # Synthetic ATR for tight risk
+                            available_tier_capital=available_arb_cap,
+                            min_stop_loss_pct=0.03, # Very tight stop loss for arbitrage
+                            max_stop_loss_pct=0.05
+                        )
+                        
+                        qty = sizing["quantity"]
+                        if qty > 0:
+                            order_id = await broker.execute_buy(symbol, qty, sizing["stop_loss_price"])
+                            if order_id:
+                                active_trades[symbol] = {
+                                    "entry_price": current_price,
+                                    "stop_loss_price": sizing["stop_loss_price"],
+                                    "quantity": qty,
+                                    "initial_capital": sizing["capital_required"],
+                                    "purchased_at": datetime.now().isoformat(),
+                                    "order_id": order_id,
+                                    "risk_tier": "moderate", # Borrows from moderate
+                                    "analysis": {
+                                        "fund_verdict": "MERGER_ARBITRAGE",
+                                        "arb_spread_pct": arb_analysis.get("spread_pct"),
+                                        "deal_price": arb_analysis.get("deal_price")
+                                    }
+                                }
+                                slots_available -= 1
+                                available_arb_cap -= sizing["capital_required"]
+                                logger.info(f"Successfully executed priority arbitrage buy for {symbol}.")
+            
+
             for tier, tier_pct in [("high", alloc.get("high_risk_pct", 0.30)), 
                                    ("moderate", alloc.get("moderate_risk_pct", 0.40)), 
                                    ("low", alloc.get("low_risk_pct", 0.25)),

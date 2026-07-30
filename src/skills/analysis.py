@@ -682,3 +682,56 @@ class PortfolioHedgingSkill(Skill):
             "hedge_type": "NONE",
             "rationale": f"Macro is {macro_posture} with {active_exposure_pct*100:.1f}% exposure. No macro hedge needed."
         }
+
+class MergerArbitrageAnalysisSkill(Skill):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="MergerArbitrageAnalysis", description="Analyzes news to detect merger arbitrage opportunities.")
+        self.llm = llm
+
+    def execute(self, symbol: str, news_items: List[Dict[str, Any]], current_price: float) -> Dict[str, Any]:
+        if not news_items:
+            return {"arbitrage_found": False, "rationale": "No news found to analyze."}
+
+        news_summary = "\n".join([f"- {n.get('title')}: {n.get('content', '')}" for n in news_items])
+        
+        prompt = f"""You are an elite Merger Arbitrage Analyst.
+Analyze the following recent news headlines for the target stock '{symbol}'. Current market price is ${current_price:.2f}.
+
+News:
+{news_summary}
+
+Determine if there is an ACTIVE, definitive merger, buyout, or acquisition agreement where '{symbol}' is being acquired for a specific cash amount per share.
+
+Respond strictly in JSON:
+{{
+    "arbitrage_found": true/false,
+    "deal_price": float (the exact cash acquisition price per share, or 0.0 if not found/applicable),
+    "acquirer": "Name of acquiring company, or N/A",
+    "rationale": "Brief explanation of the deal and status"
+}}
+"""
+        try:
+            res = self.llm.call(prompt, system_prompt="You extract exact M&A deal terms from news text.")
+            data = json.loads(res.replace("```json", "").replace("```", "").strip())
+            
+            # Additional validation
+            if data.get("arbitrage_found") and data.get("deal_price", 0.0) > 0:
+                deal_price = float(data.get("deal_price"))
+                spread_pct = (deal_price - current_price) / current_price
+                
+                data["spread_pct"] = spread_pct
+                # Only valid if there is a positive spread between 2% and 25% (to avoid anomalies or already closed deals)
+                if 0.02 <= spread_pct <= 0.25:
+                    data["is_actionable"] = True
+                    data["rationale"] += f" | Actionable spread of {spread_pct*100:.1f}%."
+                else:
+                    data["is_actionable"] = False
+                    data["rationale"] += f" | Spread of {spread_pct*100:.1f}% is outside actionable bounds (2-25%)."
+            else:
+                data["is_actionable"] = False
+                data["spread_pct"] = 0.0
+                
+            return data
+        except Exception as e:
+            logger.error(f"Error analyzing merger arbitrage for {symbol}: {e}")
+            return {"arbitrage_found": False, "is_actionable": False, "rationale": f"Analysis error: {e}"}

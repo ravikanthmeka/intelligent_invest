@@ -460,3 +460,15 @@ class PortfolioHedgingAgent(Agent):
 
     def evaluate(self, macro_posture: str, active_exposure_pct: float) -> Dict[str, Any]:
         return self.get_skill("PortfolioHedging").execute(macro_posture, active_exposure_pct)
+
+class MergerArbitrageAgent(Agent):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="MergerArbitrageAgent", role="Actively hunts for M&A arbitrage spreads.")
+        self.llm = llm
+        self.register_skill(FetchRecentNewsSkill())
+        from src.skills.analysis import MergerArbitrageAnalysisSkill
+        self.register_skill(MergerArbitrageAnalysisSkill(llm))
+
+    def analyze(self, symbol: str, current_price: float) -> Dict[str, Any]:
+        news = self.get_skill("FetchRecentNews").execute(symbol)
+        return self.get_skill("MergerArbitrageAnalysis").execute(symbol, news, current_price)
