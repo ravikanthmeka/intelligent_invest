@@ -281,7 +281,20 @@ class SelectSpeculativeOptionSkill(Skill):
                 
             # Find strike closest to current price (ATM)
             options_df['strike_diff'] = abs(options_df['strike'] - current_price)
-            atm_option = options_df.loc[options_df['strike_diff'].idxmin()]
+            # Sort by strike difference to find the closest ones
+            options_df = options_df.sort_values(by='strike_diff')
+            atm_option = options_df.iloc[0]
+            
+            # Get up to 3 considered options
+            considered = []
+            for i in range(min(3, len(options_df))):
+                opt = options_df.iloc[i]
+                considered.append({
+                    "strike": float(opt['strike']),
+                    "lastPrice": float(opt['lastPrice']),
+                    "ask": float(opt['ask']) if 'ask' in opt else 0.0,
+                    "volume": int(opt['volume']) if not pd.isna(opt['volume']) else 0
+                })
             
             return {
                 "symbol": symbol,
@@ -291,7 +304,8 @@ class SelectSpeculativeOptionSkill(Skill):
                 "lastPrice": float(atm_option['lastPrice']),
                 "bid": float(atm_option['bid']) if 'bid' in atm_option else 0.0,
                 "ask": float(atm_option['ask']) if 'ask' in atm_option else 0.0,
-                "volume": int(atm_option['volume']) if not pd.isna(atm_option['volume']) else 0
+                "volume": int(atm_option['volume']) if not pd.isna(atm_option['volume']) else 0,
+                "considered_options": considered
             }
         except Exception as e:
             logger.error(f"Error selecting option for {symbol}: {e}")

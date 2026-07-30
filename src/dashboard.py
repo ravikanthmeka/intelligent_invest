@@ -501,6 +501,26 @@ with tab_options:
         st.info("No active options contracts currently tracked.")
         
     st.write("---")
+    st.write("### 🔍 Recently Considered Options (Last Run)")
+    considered_opts_list = []
+    for eval_item in state.get("candidate_evaluations", []):
+        analysis = eval_item.get("analysis", {})
+        if "considered_options" in analysis and analysis["considered_options"]:
+            for opt in analysis["considered_options"]:
+                considered_opts_list.append({
+                    "Symbol": eval_item.get("symbol", ""),
+                    "Strike": f"${opt.get('strike', 0):.2f}",
+                    "Last Price": f"${opt.get('lastPrice', 0):.2f}",
+                    "Ask": f"${opt.get('ask', 0):.2f}",
+                    "Volume": opt.get("volume", 0),
+                    "Tech Verdict": analysis.get("tech_verdict", "UNKNOWN")
+                })
+    if considered_opts_list:
+        st.dataframe(pd.DataFrame(considered_opts_list), use_container_width=True)
+    else:
+        st.info("No options were recently evaluated/considered.")
+        
+    st.write("---")
     st.write("### 🚨 Manual Options Liquidation")
     st.markdown("Select an active options contract to close/sell immediately at market price.")
     

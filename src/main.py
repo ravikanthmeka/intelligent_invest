@@ -678,6 +678,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                             opt_data = opt_skill.execute(symbol, cand["close"], bias="bullish")
 
                             if opt_data and "expiration" in opt_data:
+                                eval_entry["analysis"]["considered_options"] = opt_data.get("considered_options", [])
                                 opt_price = opt_data.get("ask", 0) or opt_data.get("lastPrice", 0)
                                 if opt_price > 0:
                                     # Risk max 25% of options cap per trade or $2000, whichever is smaller
