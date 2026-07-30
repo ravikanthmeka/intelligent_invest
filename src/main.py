@@ -711,9 +711,6 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                             }
                         }
                         
-                            }
-                        }
-                        
                         slots_available -= 1
                         available_tier_cap -= sizing["capital_required"]
                         eval_entry["status"] = "Purchased (Growth Play)" if is_growth_reinvestment_play else "Purchased"
