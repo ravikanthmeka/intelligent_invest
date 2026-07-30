@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from typing import Dict, Any, List, Optional
-from ib_insync import IB, Stock, Order, MarketOrder, StopOrder, LimitOrder, PortfolioItem
+from ib_insync import IB, Stock, Option, Order, MarketOrder, StopOrder, LimitOrder, PortfolioItem
 
 logger = logging.getLogger("BrokerAPI")
 
@@ -127,6 +127,34 @@ class BrokerAgent:
             return str(parent_trade.order.orderId)
         except Exception as e:
             logger.error(f"Error executing buy order for {symbol}: {e}")
+            return None
+
+    async def execute_option_buy(self, symbol: str, expiration: str, strike: float, right: str, quantity: int) -> Optional[str]:
+        """
+        Executes a Buy order for a specific Option contract.
+        expiration format: YYYY-MM-DD, e.g., '2023-10-20' -> ib_insync uses 'YYYYMMDD'
+        """
+        if self.dry_run:
+            logger.info(f"[DRY RUN] Buy Option Executed: Buy {quantity} contracts of {symbol} {expiration} {strike} {right}")
+            return "dry-run-opt-order-id-123"
+
+        try:
+            # IB requires YYYYMMDD
+            ib_exp = expiration.replace("-", "")
+            contract = Option(symbol, ib_exp, strike, right, "SMART", tradingClass=symbol)
+            # Some options don't use the symbol as tradingClass, but qualifyContracts will fix it usually, or we can omit it.
+            # Safe basic contract:
+            contract = Option(symbol, ib_exp, strike, right, "SMART", multiplier="100", currency="USD")
+            await self.ib.qualifyContractsAsync(contract)
+
+            # Create Market Buy order
+            order = MarketOrder("BUY", quantity)
+            trade = self.ib.placeOrder(contract, order)
+            
+            logger.info(f"Placed Option Buy for {symbol} {ib_exp} {strike}{right}: OrderId {trade.order.orderId}")
+            return str(trade.order.orderId)
+        except Exception as e:
+            logger.error(f"Error executing option buy order for {symbol}: {e}")
             return None
 
     async def update_stop_loss(self, symbol: str, new_stop_price: float) -> bool:

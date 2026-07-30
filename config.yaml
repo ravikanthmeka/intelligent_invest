@@ -5,10 +5,11 @@ trading:
   dynamic_market_scanning: true  # If true, samples S&P 500 constituents combined with watchlist for dynamic screening.
 
 allocation:
-  high_risk_pct: 0.30
-  moderate_risk_pct: 0.40
-  low_risk_pct: 0.25
+  high_risk_pct: 0.25
+  low_risk_pct: 0.20
+  moderate_risk_pct: 0.30
   penny_risk_pct: 0.05
+  options_pct: 0.20
 
 llm:
   provider: "bedrock"  # Options: "bedrock" or "openai"
@@ -72,6 +73,12 @@ rules:
   min_technical_score: 5.0
   min_fundamental_score: 5.0
   min_news_score: 5.0
+  min_qualitative_score: 6.0
+  min_historical_score: 6.0
+  min_options_score: 5.0
+  min_insider_score: 5.0
+  max_correlation_threshold: 0.75
+  min_dividend_yield: 0.02
   earnings_shield_days: 3
   growth_reinvestment_rules:
     enabled: true

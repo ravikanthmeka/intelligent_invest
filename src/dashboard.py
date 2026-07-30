@@ -301,6 +301,7 @@ st.subheader("Multi-Agent Quantitative Trading System Dashboard")
 state = load_state()
 cfg = load_config()
 active_trades = state.get("active_trades", {})
+active_options = state.get("active_options", {})
 net_liq = state.get("net_liquidation", 100000.0)
 cash = state.get("cash", 100000.0)
 
@@ -393,25 +394,28 @@ with col4:
 high_deployed = sum(details.get("initial_capital", 0.0) for symbol, details in active_trades.items() if details.get("risk_tier", "moderate") == "high")
 mod_deployed = sum(details.get("initial_capital", 0.0) for symbol, details in active_trades.items() if details.get("risk_tier", "moderate") == "moderate")
 low_deployed = sum(details.get("initial_capital", 0.0) for symbol, details in active_trades.items() if details.get("risk_tier", "moderate") == "low")
+options_deployed = sum(details.get("initial_capital", 0.0) for symbol, details in active_options.items())
 
 # Load allocation percentages
 cfg_alloc = load_config()
-alloc_pcts = cfg_alloc.get("allocation", {"high_risk_pct": 0.30, "moderate_risk_pct": 0.40, "low_risk_pct": 0.30})
-high_target_pct = alloc_pcts.get("high_risk_pct", 0.30)
-mod_target_pct = alloc_pcts.get("moderate_risk_pct", 0.40)
-low_target_pct = alloc_pcts.get("low_risk_pct", 0.30)
+alloc_pcts = cfg_alloc.get("allocation", {"high_risk_pct": 0.25, "moderate_risk_pct": 0.30, "low_risk_pct": 0.20, "options_pct": 0.20})
+high_target_pct = alloc_pcts.get("high_risk_pct", 0.25)
+mod_target_pct = alloc_pcts.get("moderate_risk_pct", 0.30)
+low_target_pct = alloc_pcts.get("low_risk_pct", 0.20)
+options_target_pct = alloc_pcts.get("options_pct", 0.20)
 
 portfolio_total = net_liq
 high_target_cap = portfolio_total * high_target_pct
 mod_target_cap = portfolio_total * mod_target_pct
 low_target_cap = portfolio_total * low_target_pct
+options_target_cap = portfolio_total * options_target_pct
 
-st.write("### Risk Tier Capital Allocation")
-col_tier1, col_tier2, col_tier3 = st.columns(3)
+st.write("### Risk Tier & Options Capital Allocation")
+col_tier1, col_tier2, col_tier3, col_tier4 = st.columns(4)
 with col_tier1:
     st.markdown(f"""
     <div class="kpi-card">
-        <div class="kpi-title">🔴 High Risk / High Return (Target: {high_target_pct*100:.0f}%)</div>
+        <div class="kpi-title">🔴 High Risk (Target: {high_target_pct*100:.0f}%)</div>
         <div class="kpi-val">${high_deployed:,.2f} / ${high_target_cap:,.2f}</div>
     </div>
     """, unsafe_allow_html=True)
@@ -427,6 +431,13 @@ with col_tier3:
     <div class="kpi-card">
         <div class="kpi-title">🟢 Low Risk (Target: {low_target_pct*100:.0f}%)</div>
         <div class="kpi-val">${low_deployed:,.2f} / ${low_target_cap:,.2f}</div>
+    </div>
+    """, unsafe_allow_html=True)
+with col_tier4:
+    st.markdown(f"""
+    <div class="kpi-card">
+        <div class="kpi-title">🟣 Options (Target: {options_target_pct*100:.0f}%)</div>
+        <div class="kpi-val">${options_deployed:,.2f} / ${options_target_cap:,.2f}</div>
     </div>
     """, unsafe_allow_html=True)# Helper: compile learnings
 def compile_learnings_feedback(state: Dict[str, Any]) -> str:
@@ -457,7 +468,47 @@ def compile_learnings_feedback(state: Dict[str, Any]) -> str:
     return feedback
 
 # Layout: Main Body
-tab1, tab2, tab_candidates, tab_prompts, tab_manual, tab3, tab4 = st.tabs(["📊 Active Positions", "📜 Trade Log & AI Learnings", "🔍 Candidate Analysis Log", "🛠️ LLM Agent Prompts", "🎯 On-Demand Ticker Target", "📁 System Logs", "⚙️ Settings & Risk Rules"])
+tab_options, tab1, tab2, tab_candidates, tab_prompts, tab_manual, tab3, tab4 = st.tabs(["📈 Options Trading", "📊 Active Positions", "📜 Trade Log & AI Learnings", "🔍 Candidate Analysis Log", "🛠️ LLM Agent Prompts", "🎯 On-Demand Ticker Target", "📁 System Logs", "⚙️ Settings & Risk Rules"])
+
+with tab_options:
+    st.write("### Active Options Contracts")
+    if len(active_options) > 0:
+        opt_list = []
+        for opt_key, opt_details in active_options.items():
+            opt_list.append({
+                "Symbol": opt_details.get("symbol", ""),
+                "Contract": opt_key,
+                "Type": "Call" if opt_details.get("right") == "C" else "Put",
+                "Expiry": opt_details.get("expiration", ""),
+                "Strike": f"${opt_details.get('strike', 0):.2f}",
+                "Quantity": opt_details.get("quantity", 0),
+                "Entry Price": f"${opt_details.get('entry_price', 0):.2f}",
+                "Capital Invested": f"${opt_details.get('initial_capital', 0):.2f}"
+            })
+        st.dataframe(pd.DataFrame(opt_list), use_container_width=True)
+    else:
+        st.info("No active options contracts currently tracked.")
+        
+    st.write("---")
+    st.write("### 🚨 Manual Options Liquidation")
+    st.markdown("Select an active options contract to close/sell immediately at market price.")
+    
+    col_opt_liq1, col_opt_liq2 = st.columns([2, 1])
+    with col_opt_liq1:
+        sell_opt = st.selectbox("Option Contract to Liquidate", options=["None"] + list(active_options.keys()))
+    with col_opt_liq2:
+        st.write("") # spacing
+        st.write("") # spacing
+        confirm_opt_liq = st.checkbox("Confirm Contract Liquidation", value=False)
+        
+    sell_opt_btn = st.button("Execute Close Order", type="primary")
+    if sell_opt_btn:
+        if sell_opt == "None":
+            st.warning("Please select a contract.")
+        elif not confirm_opt_liq:
+            st.error("Please check the 'Confirm Contract Liquidation' checkbox to proceed.")
+        else:
+            st.info(f"Closing {sell_opt} functionality will be available in Phase 3.")
 
 with tab1:
     st.write("### Portfolio Breakdown")
@@ -1298,6 +1349,7 @@ with tab4:
 st.sidebar.write("### Account Summary")
 st.sidebar.metric("Net Liquidation", f"${net_liq:,.2f}")
 st.sidebar.metric("Available Cash", f"${cash:,.2f}")
+st.sidebar.metric("Options Target", f"{options_target_pct*100:.0f}% (${options_target_cap:,.0f})")
 
 st.sidebar.write("### Broker Session")
 if st.sidebar.button("🔌 Reconnect Broker & Trigger 2FA"):

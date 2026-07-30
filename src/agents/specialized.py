@@ -4,8 +4,8 @@ import pandas as pd
 from typing import List, Dict, Any, Tuple, Optional
 from src.llm import LLMClient
 from src.agents.base import Agent
-from src.skills.market_data import CalculateIndicatorsSkill, FetchEarningsCalendarSkill, FetchRecentNewsSkill
-from src.skills.analysis import TechnicalAnalysisSkill, FundamentalAnalysisSkill, NewsSentimentSkill, GrowthRnDEvaluationSkill
+from src.skills.market_data import CalculateIndicatorsSkill, FetchEarningsCalendarSkill, FetchRecentNewsSkill, FetchMacroDataSkill, FetchSectorETFDataSkill, FetchQualitativeDataSkill, FetchOptionsChainSkill, FetchInsiderTradingSkill, FetchDividendDataSkill, CalculateCorrelationSkill
+from src.skills.analysis import TechnicalAnalysisSkill, FundamentalAnalysisSkill, NewsSentimentSkill, GrowthRnDEvaluationSkill, MacroEconomicAnalysisSkill, GlobalSectorRotationSkill, QualitativeAnalysisSkill, HistoricalAnalogSkill, OptionsFlowAnalysisSkill, InsiderTradingAnalysisSkill, RetailSentimentAnalysisSkill, DividendIncomeAnalysisSkill, PortfolioCorrelationSkill
 from src.skills.risk_management import CalculatePositionSizeSkill, EvaluateActivePositionSkill
 
 logger = logging.getLogger("SpecializedAgents")
@@ -42,8 +42,10 @@ class MarketScannerAgent(Agent):
     def scan(self) -> List[Dict[str, Any]]:
         return self.scan_tier("moderate")
 
-    def scan_tier(self, risk_tier: str) -> List[Dict[str, Any]]:
+    def scan_tier(self, risk_tier: str, macro_themes: List[str] = None, top_sectors: List[str] = None) -> List[Dict[str, Any]]:
         logger.info(f"Generating ticker suggestions for risk tier: {risk_tier}...")
+        macro_themes = macro_themes or []
+        top_sectors = top_sectors or []
         
         tier_conf = self.tier_rules.get(risk_tier, {})
         guidelines = tier_conf.get("guidelines", "")
@@ -63,6 +65,7 @@ class MarketScannerAgent(Agent):
         if self.llm:
             import random
             learnings_str = f"\nPortfolio learnings from past trades:\n{self.learnings_feedback}\n" if self.learnings_feedback else ""
+            macro_str = f"\nCurrent Macro Themes: {', '.join(macro_themes)}\nTop Sectors: {', '.join(top_sectors)}\nFavor tickers aligned with these themes and sectors." if (macro_themes or top_sectors) else ""
             
             # Use dynamic market sampling for standard risk tiers if enabled
             if self.dynamic_market_scanning and risk_tier in ["high", "moderate", "low"]:
@@ -81,6 +84,7 @@ class MarketScannerAgent(Agent):
                 
                 Guidelines: {guidelines}
                 {learnings_str}
+                {macro_str}
                 Important: Select candidates that represent the target risk profile. For high/moderate risk tiers, prefer candidates with strong growth potential or high R&D intensity.
                 
                 Respond in valid JSON structure:
@@ -95,6 +99,7 @@ class MarketScannerAgent(Agent):
                 Suggest a list of 16 US stock ticker symbols that represent the '{risk_tier}' risk/return profile:
                 Guidelines: {guidelines}
                 {learnings_str}
+                {macro_str}
                 Important: Every suggested stock must be a speculative US penny stock trading strictly under $5.00 per share. Prefer companies with high volume, upcoming growth catalysts, and solid emerging business models or research investments.
                 Respond in valid JSON structure:
                 {{
@@ -107,6 +112,7 @@ class MarketScannerAgent(Agent):
                 Suggest a list of 16 US stock ticker symbols that represent the '{risk_tier}' risk/return profile:
                 Guidelines: {guidelines}
                 {learnings_str}
+                {macro_str}
                 Respond in valid JSON structure:
                 {{
                     "tickers": ["SYMBOL1", "SYMBOL2", ...]
@@ -162,6 +168,8 @@ class MarketScannerAgent(Agent):
                         "sma_50": sma_50,
                         "sma_200": sma_200,
                         "atr": last_row['ATR'],
+                        "volume": last_row['Volume'],
+                        "avg_volume": df['Volume'].rolling(20).mean().iloc[-1],
                         "volume_spike": last_row['Volume'] > (df['Volume'].rolling(20).mean().iloc[-1] * 1.2)
                     })
             except Exception as e:
@@ -308,3 +316,100 @@ class GrowthAgent(Agent):
     def analyze(self, symbol: str, learnings_feedback: str = "") -> Dict[str, Any]:
         growth_skill = self.get_skill("GrowthRnDEvaluation")
         return growth_skill.execute(symbol, learnings_feedback=learnings_feedback)
+
+class MacroEconomicsAgent(Agent):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="MacroEconomicsAgent", role="Analyze broad market conditions and risk posture.")
+        self.llm = llm
+        self.register_skill(FetchMacroDataSkill())
+        self.register_skill(MacroEconomicAnalysisSkill(llm))
+
+    def evaluate_market(self) -> Dict[str, Any]:
+        macro_data = self.get_skill("FetchMacroData").execute()
+        return self.get_skill("MacroEconomicAnalysis").execute(macro_data)
+
+class GlobalSectorRotationAgent(Agent):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="GlobalSectorRotationAgent", role="Analyze sector and global ETF flows to identify strong themes.")
+        self.llm = llm
+        self.register_skill(FetchSectorETFDataSkill())
+        self.register_skill(GlobalSectorRotationSkill(llm))
+
+    def evaluate_sectors(self) -> Dict[str, Any]:
+        sector_data = self.get_skill("FetchSectorETFData").execute()
+        return self.get_skill("GlobalSectorRotation").execute(sector_data)
+
+class QualitativeResearchAgent(Agent):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="QualitativeResearchAgent", role="Evaluate qualitative factors such as business moat and leadership.")
+        self.llm = llm
+        self.register_skill(FetchQualitativeDataSkill())
+        self.register_skill(QualitativeAnalysisSkill(llm))
+
+    def analyze(self, symbol: str) -> Dict[str, Any]:
+        qual_data = self.get_skill("FetchQualitativeData").execute(symbol)
+        return self.get_skill("QualitativeAnalysis").execute(symbol, qual_data)
+
+class HistoricalAnalogAgent(Agent):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="HistoricalAnalogAgent", role="Compare technical setup against historical precedents.")
+        self.llm = llm
+        self.register_skill(HistoricalAnalogSkill(llm))
+
+    def analyze(self, symbol: str, current_price: float, rsi: float, sma_50: float, sma_200: float) -> Dict[str, Any]:
+        return self.get_skill("HistoricalAnalog").execute(symbol, current_price, rsi, sma_50, sma_200)
+
+class OptionsFlowAgent(Agent):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="OptionsFlowAgent", role="Evaluates options put/call sentiment.")
+        self.llm = llm
+        self.register_skill(FetchOptionsChainSkill())
+        self.register_skill(OptionsFlowAnalysisSkill(llm))
+
+    def analyze(self, symbol: str) -> Dict[str, Any]:
+        opt_data = self.get_skill("FetchOptionsChain").execute(symbol)
+        return self.get_skill("OptionsFlowAnalysis").execute(symbol, opt_data)
+
+class InsiderTradingAgent(Agent):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="InsiderTradingAgent", role="Evaluates insider trading activity.")
+        self.llm = llm
+        self.register_skill(FetchInsiderTradingSkill())
+        self.register_skill(InsiderTradingAnalysisSkill(llm))
+
+    def analyze(self, symbol: str) -> Dict[str, Any]:
+        insider_data = self.get_skill("FetchInsiderTrading").execute(symbol)
+        return self.get_skill("InsiderTradingAnalysis").execute(symbol, insider_data)
+
+class RetailSentimentAgent(Agent):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="RetailSentimentAgent", role="Evaluates retail meme stock hype and momentum.")
+        self.llm = llm
+        self.register_skill(FetchRecentNewsSkill()) # Reusing news skill for sentiment
+        self.register_skill(RetailSentimentAnalysisSkill(llm))
+
+    def analyze(self, symbol: str, volume: float, avg_volume: float) -> Dict[str, Any]:
+        news = self.get_skill("FetchRecentNews").execute(symbol)
+        return self.get_skill("RetailSentimentAnalysis").execute(symbol, news, volume, avg_volume)
+
+class DividendIncomeAgent(Agent):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="DividendIncomeAgent", role="Evaluates dividend yield and safety.")
+        self.llm = llm
+        self.register_skill(FetchDividendDataSkill())
+        self.register_skill(DividendIncomeAnalysisSkill(llm))
+
+    def analyze(self, symbol: str) -> Dict[str, Any]:
+        div_data = self.get_skill("FetchDividendData").execute(symbol)
+        return self.get_skill("DividendIncomeAnalysis").execute(symbol, div_data)
+
+class CorrelationAgent(Agent):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="CorrelationAgent", role="Evaluates candidate correlation against active portfolio.")
+        self.llm = llm
+        self.register_skill(CalculateCorrelationSkill())
+        self.register_skill(PortfolioCorrelationSkill(llm))
+
+    def analyze(self, symbol: str, active_symbols: List[str], max_threshold: float = 0.75) -> Dict[str, Any]:
+        corr_data = self.get_skill("CalculateCorrelation").execute(symbol, active_symbols)
+        return self.get_skill("PortfolioCorrelation").execute(symbol, corr_data, max_threshold)

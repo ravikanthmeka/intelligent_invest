@@ -341,3 +341,263 @@ class GrowthRnDEvaluationSkill(Skill):
                 "net_margin_pct": 0.0,
                 "rationale": f"Fallback: growth R&D analysis failed due to error: {e}"
             }
+
+class MacroEconomicAnalysisSkill(Skill):
+    def __init__(self, llm: LLMClient):
+        super().__init__(
+            name="MacroEconomicAnalysis",
+            description="Evaluates macro data to determine overall market risk posture."
+        )
+        self.llm = llm
+
+    def execute(self, macro_data: Dict[str, Any]) -> Dict[str, Any]:
+        prompt = f"""
+        Analyze the following 1-month performance of key macroeconomic indicators:
+        {json.dumps(macro_data, indent=2)}
+        
+        Indicators reference:
+        - SPY: S&P 500 (Equities)
+        - TLT: 20+ Year Treasury Bonds (Safe haven/Interest rate proxy)
+        - GLD: Gold (Safe haven/Inflation hedge)
+        - UUP: US Dollar Index (Safe haven/Currency strength)
+        
+        Determine the overall market risk posture.
+        Respond in a valid JSON structure:
+        {{
+            "posture": "RISK_ON" | "RISK_OFF" | "NEUTRAL",
+            "risk_multiplier": float (0.5 to 1.5, where <1 means tighten risk, >1 means relax risk),
+            "suggested_themes": ["theme1", "theme2"],
+            "rationale": "Brief macro rationale."
+        }}
+        Do not add any markup or markdown wraps besides the raw JSON.
+        """
+        try:
+            response_text = self.llm.call(prompt, system_prompt="You are a global macro strategist.")
+            clean_text = response_text.replace("```json", "").replace("```", "").strip()
+            return json.loads(clean_text)
+        except Exception as e:
+            logger.error(f"MacroEconomicAnalysisSkill failed: {e}")
+            return {"posture": "NEUTRAL", "risk_multiplier": 1.0, "suggested_themes": [], "rationale": "Fallback due to error."}
+
+class GlobalSectorRotationSkill(Skill):
+    def __init__(self, llm: LLMClient):
+        super().__init__(
+            name="GlobalSectorRotation",
+            description="Evaluates sector ETFs to find where capital is flowing."
+        )
+        self.llm = llm
+
+    def execute(self, sector_data: Dict[str, Any]) -> Dict[str, Any]:
+        prompt = f"""
+        Analyze the 1-month performance of the following sector ETFs:
+        {json.dumps(sector_data, indent=2)}
+        
+        Identify the top 3 strongest sectors where capital is currently flowing.
+        Respond in a valid JSON structure:
+        {{
+            "top_sectors": ["Sector1", "Sector2", "Sector3"],
+            "rationale": "Brief reasoning for sector strength."
+        }}
+        Do not add any markup or markdown wraps besides the raw JSON.
+        """
+        try:
+            response_text = self.llm.call(prompt, system_prompt="You are a sector rotation analyst.")
+            clean_text = response_text.replace("```json", "").replace("```", "").strip()
+            return json.loads(clean_text)
+        except Exception as e:
+            logger.error(f"GlobalSectorRotationSkill failed: {e}")
+            return {"top_sectors": [], "rationale": "Fallback due to error."}
+
+class QualitativeAnalysisSkill(Skill):
+    def __init__(self, llm: LLMClient):
+        super().__init__(
+            name="QualitativeAnalysis",
+            description="Evaluates company leadership and business moat."
+        )
+        self.llm = llm
+
+    def execute(self, symbol: str, qual_data: Dict[str, Any]) -> Dict[str, Any]:
+        prompt = f"""
+        Evaluate the qualitative factors for {symbol}:
+        Business Summary: {qual_data.get('business_summary', 'N/A')}
+        Leadership: {', '.join(qual_data.get('leadership', []))}
+        
+        Score the business moat, clarity of business model, and apparent leadership strength.
+        Respond in a valid JSON structure:
+        {{
+            "verdict": "STRONG" | "NEUTRAL" | "WEAK",
+            "score": float (0.0 to 10.0),
+            "rationale": "Brief qualitative evaluation."
+        }}
+        Do not add any markup or markdown wraps besides the raw JSON.
+        """
+        try:
+            response_text = self.llm.call(prompt, system_prompt="You are an equity research analyst.")
+            clean_text = response_text.replace("```json", "").replace("```", "").strip()
+            return json.loads(clean_text)
+        except Exception as e:
+            logger.error(f"QualitativeAnalysisSkill failed: {e}")
+            return {"verdict": "NEUTRAL", "score": 5.0, "rationale": "Fallback due to error."}
+
+class HistoricalAnalogSkill(Skill):
+    def __init__(self, llm: LLMClient):
+        super().__init__(
+            name="HistoricalAnalog",
+            description="Compares a stock's current technical setup with historical analogs to predict breakout probability."
+        )
+        self.llm = llm
+
+    def execute(self, symbol: str, current_price: float, rsi: float, sma_50: float, sma_200: float) -> Dict[str, Any]:
+        prompt = f"""
+        Evaluate {symbol}'s current setup against historical market cycles and analogs.
+        Current Setup:
+        - Price: ${current_price:.2f}
+        - RSI: {rsi:.1f}
+        - SMA 50: ${sma_50:.2f}
+        - SMA 200: ${sma_200:.2f}
+        
+        Based on historical precedent for similar technical profiles, what is the probability of a sustained breakout versus a false positive?
+        Respond in a valid JSON structure:
+        {{
+            "verdict": "FAVORABLE" | "NEUTRAL" | "UNFAVORABLE",
+            "score": float (0.0 to 10.0),
+            "rationale": "Brief historical comparison."
+        }}
+        Do not add any markup or markdown wraps besides the raw JSON.
+        """
+        try:
+            response_text = self.llm.call(prompt, system_prompt="You are a quantitative market historian.")
+            clean_text = response_text.replace("```json", "").replace("```", "").strip()
+            return json.loads(clean_text)
+        except Exception as e:
+            logger.error(f"HistoricalAnalogSkill failed for {symbol}: {e}")
+            return {"verdict": "NEUTRAL", "historical_score": 5.0, "rationale": "Historical analog logic error."}
+
+class OptionsFlowAnalysisSkill(Skill):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="OptionsFlowAnalysis", description="Evaluates options flow (put/call ratio).")
+        self.llm = llm
+
+    def execute(self, symbol: str, options_data: Dict[str, Any]) -> Dict[str, Any]:
+        if not options_data:
+            return {"verdict": "NEUTRAL", "score": 5.0, "rationale": "No options data available."}
+        
+        call_vol = options_data.get("call_volume", 0)
+        put_vol = options_data.get("put_volume", 0)
+        
+        if call_vol == 0 and put_vol == 0:
+            return {"verdict": "NEUTRAL", "score": 5.0, "rationale": "Zero options volume."}
+            
+        pc_ratio = put_vol / call_vol if call_vol > 0 else 999.0
+        
+        score = 5.0
+        verdict = "NEUTRAL"
+        if pc_ratio < 0.7:
+            verdict = "BULLISH"
+            score = 8.0
+        elif pc_ratio > 1.2:
+            verdict = "BEARISH"
+            score = 3.0
+            
+        return {
+            "verdict": verdict,
+            "score": score,
+            "rationale": f"Put/Call Ratio is {pc_ratio:.2f}."
+        }
+
+class InsiderTradingAnalysisSkill(Skill):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="InsiderTradingAnalysis", description="Evaluates insider purchasing data.")
+        self.llm = llm
+
+    def execute(self, symbol: str, insider_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        if not insider_data:
+            return {"verdict": "NEUTRAL", "score": 5.0, "rationale": "No insider data available."}
+            
+        purchases = 0
+        sales = 0
+        for row in insider_data:
+            if row.get("Insider Purchases Last 6m") == "Purchases":
+                purchases = float(row.get("Shares", 0))
+            elif row.get("Insider Purchases Last 6m") == "Sales":
+                sales = float(row.get("Shares", 0))
+                
+        if purchases > sales * 2:
+            return {"verdict": "BULLISH", "score": 8.0, "rationale": "Significant net insider buying."}
+        elif sales > purchases * 2:
+            return {"verdict": "BEARISH", "score": 3.0, "rationale": "Significant net insider selling."}
+            
+        return {"verdict": "NEUTRAL", "score": 5.0, "rationale": "Mixed or neutral insider activity."}
+
+class RetailSentimentAnalysisSkill(Skill):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="RetailSentimentAnalysis", description="Evaluates retail sentiment/momentum.")
+        self.llm = llm
+
+    def execute(self, symbol: str, news_items: List[Dict[str, Any]], volume: float, avg_volume: float) -> Dict[str, Any]:
+        vol_spike = (volume / avg_volume) if avg_volume > 0 else 1.0
+        
+        news_summary = "\n".join([f"- {n.get('title')}" for n in news_items]) if news_items else "No news."
+        
+        prompt = f"""Evaluate the retail/meme stock sentiment for '{symbol}'.
+        Today's Volume Spike vs Average: {vol_spike:.1f}x
+        Recent Headlines: {news_summary}
+        
+        Is this stock currently driven by high retail FOMO or social momentum?
+        Respond in JSON:
+        {{
+            "verdict": "HIGH_MOMENTUM" | "NEUTRAL" | "LOW_MOMENTUM",
+            "score": float (0-10, higher means more retail hype),
+            "rationale": "Brief explanation"
+        }}"""
+        
+        try:
+            res = self.llm.call(prompt, system_prompt="You are a retail sentiment tracker.")
+            return json.loads(res.replace("```json", "").replace("```", "").strip())
+        except:
+            # Fallback algorithmic
+            score = 5.0
+            verdict = "NEUTRAL"
+            if vol_spike > 2.5:
+                score = 8.5
+                verdict = "HIGH_MOMENTUM"
+            return {"verdict": verdict, "score": score, "rationale": f"Volume spike {vol_spike:.1f}x."}
+
+class DividendIncomeAnalysisSkill(Skill):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="DividendIncomeAnalysis", description="Evaluates dividend yield safety.")
+        self.llm = llm
+
+    def execute(self, symbol: str, div_data: Dict[str, Any]) -> Dict[str, Any]:
+        if not div_data or div_data.get("dividend_yield", 0) == 0:
+            return {"verdict": "NO_YIELD", "score": 0.0, "rationale": "Company pays no dividend."}
+            
+        yield_pct = div_data.get("dividend_yield", 0)
+        payout = div_data.get("payout_ratio", 0)
+        
+        if yield_pct > 0.02 and payout < 0.70:
+            return {"verdict": "SAFE_YIELD", "score": 9.0, "rationale": f"Safe {yield_pct*100:.1f}% yield with {payout*100:.1f}% payout."}
+        elif yield_pct > 0.05 and payout > 0.90:
+            return {"verdict": "YIELD_TRAP", "score": 3.0, "rationale": f"High {yield_pct*100:.1f}% yield but unsafe {payout*100:.1f}% payout."}
+            
+        return {"verdict": "MODERATE_YIELD", "score": 6.0, "rationale": "Average dividend metrics."}
+
+class PortfolioCorrelationSkill(Skill):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="PortfolioCorrelation", description="Evaluates diversification matrix.")
+        self.llm = llm
+
+    def execute(self, symbol: str, correlations: Dict[str, float], max_threshold: float = 0.75) -> Dict[str, Any]:
+        if not correlations:
+            return {"verdict": "UNCORRELATED", "score": 10.0, "rationale": "No active positions to correlate with."}
+            
+        high_corr = [sym for sym, corr in correlations.items() if corr > max_threshold]
+        
+        if high_corr:
+            return {
+                "verdict": "HIGHLY_CORRELATED", 
+                "score": 2.0, 
+                "rationale": f"Highly correlated with existing positions: {high_corr}."
+            }
+            
+        return {"verdict": "UNCORRELATED", "score": 9.0, "rationale": "Provides good diversification benefits."}

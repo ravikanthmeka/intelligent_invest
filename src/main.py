@@ -20,7 +20,16 @@ from src.agents.specialized import (
     NewsAgent,
     RiskAgent,
     PortfolioManagerAgent,
-    GrowthAgent
+    GrowthAgent,
+    MacroEconomicsAgent,
+    GlobalSectorRotationAgent,
+    QualitativeResearchAgent,
+    HistoricalAnalogAgent,
+    OptionsFlowAgent,
+    InsiderTradingAgent,
+    RetailSentimentAgent,
+    DividendIncomeAgent,
+    CorrelationAgent
 )
 
 # Setup logging
@@ -106,6 +115,16 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
     fund_agent = FundamentalAgent(llm=llm)
     growth_agent = GrowthAgent(llm=llm)
     news_agent = NewsAgent(llm=llm)
+    macro_agent = MacroEconomicsAgent(llm=llm)
+    sector_agent = GlobalSectorRotationAgent(llm=llm)
+    qual_agent = QualitativeResearchAgent(llm=llm)
+    hist_agent = HistoricalAnalogAgent(llm=llm)
+    options_agent = OptionsFlowAgent(llm=llm)
+    insider_agent = InsiderTradingAgent(llm=llm)
+    retail_agent = RetailSentimentAgent(llm=llm)
+    dividend_agent = DividendIncomeAgent(llm=llm)
+    corr_agent = CorrelationAgent(llm=llm)
+    
     risk_agent = RiskAgent(
         max_positions=config.get("risk", {}).get("max_positions", 5),
         max_cap_pct=config.get("risk", {}).get("max_capital_pct", 0.20),
@@ -115,6 +134,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
         trail_trigger_pct=config.get("risk", {}).get("trail_trigger_pct", 0.03),
         size_by_capital=config.get("risk", {}).get("size_by_capital", False)
     )
+
     
     pm = PortfolioManagerAgent(
         llm=llm,
@@ -139,6 +159,23 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
         return
 
     try:
+        # 2.5 Macro & Sector Rotation Analysis
+        logger.info("Evaluating Macroeconomic Risk Posture...")
+        macro_result = macro_agent.evaluate_market()
+        macro_posture = macro_result.get("posture", "NEUTRAL")
+        macro_multiplier = macro_result.get("risk_multiplier", 1.0)
+        macro_themes = macro_result.get("suggested_themes", [])
+        logger.info(f"Macro Posture: {macro_posture} | Risk Multiplier: {macro_multiplier} | Themes: {macro_themes}")
+
+        logger.info("Evaluating Global Sector Rotation...")
+        sector_result = sector_agent.evaluate_sectors()
+        top_sectors = sector_result.get("top_sectors", [])
+        logger.info(f"Top Sectors: {top_sectors}")
+
+        # Apply Macro Risk Multiplier
+        risk_agent.max_cap_pct *= macro_multiplier
+        risk_agent.risk_pct *= macro_multiplier
+
         # Load local trade tracking state
         active_trades = state.get("active_trades", {})
 
@@ -428,6 +465,86 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                                 if (fund_verd == "UNFAVORABLE" or fund_score < min_fund) and not is_growth_reinvestment_play:
                                     logger.info(f"Skipping {symbol}: Unfavorable fundamentals.")
                                     status = f"Skipped: Fundamental Strength ({fund_verd}, Score: {fund_score})"
+                                else:
+                                    # E. Qualitative Research Check
+                                    min_qual = rules_cfg.get("min_qualitative_score", 6.0)
+                                    qual_analysis = qual_agent.analyze(symbol)
+                                    qual_score = qual_analysis.get("qualitative_score", 5.0)
+                                    qual_verd = qual_analysis.get("verdict", "NEUTRAL")
+                                    logger.info(f"Qualitative Verdict for {symbol}: {qual_verd} | Score: {qual_score}/10")
+                                    
+                                    if qual_verd == "POOR" or qual_score < min_qual:
+                                        logger.info(f"Skipping {symbol}: Qualitative strength insufficient.")
+                                        status = f"Skipped: Qualitative Research ({qual_verd}, Score: {qual_score})"
+                                    else:
+                                        # F. Historical Analog Check
+                                        min_hist = rules_cfg.get("min_historical_score", 6.0)
+                                        hist_analysis = hist_agent.analyze(
+                                            symbol=symbol,
+                                            current_price=cand["close"],
+                                            rsi=cand["rsi"],
+                                            sma_50=cand["sma_50"],
+                                            sma_200=cand["sma_200"]
+                                        )
+                                        hist_score = hist_analysis.get("historical_score", 5.0)
+                                        hist_verd = hist_analysis.get("verdict", "NEUTRAL")
+                                        logger.info(f"Historical Analog Verdict for {symbol}: {hist_verd} | Score: {hist_score}/10")
+                                        
+                                        if hist_verd == "BEARISH" or hist_score < min_hist:
+                                            logger.info(f"Skipping {symbol}: Historical analog insufficient.")
+                                            status = f"Skipped: Historical Analog ({hist_verd}, Score: {hist_score})"
+                                        else:
+                                            # G. Correlation Check
+                                            max_corr = rules_cfg.get("max_correlation_threshold", 0.75)
+                                            corr_analysis = corr_agent.analyze(symbol, list(active_trades.keys()), max_threshold=max_corr)
+                                            corr_verd = corr_analysis.get("verdict", "UNCORRELATED")
+                                            logger.info(f"Correlation Verdict for {symbol}: {corr_verd}")
+                                            
+                                            if corr_verd == "HIGHLY_CORRELATED":
+                                                logger.info(f"Skipping {symbol}: Highly correlated with active portfolio.")
+                                                status = f"Skipped: Correlation ({corr_verd})"
+                                            else:
+                                                # H. Options Flow Check
+                                                min_options = rules_cfg.get("min_options_score", 5.0)
+                                                opt_analysis = options_agent.analyze(symbol)
+                                                opt_score = opt_analysis.get("score", 5.0)
+                                                opt_verd = opt_analysis.get("verdict", "NEUTRAL")
+                                                logger.info(f"Options Flow Verdict for {symbol}: {opt_verd} | Score: {opt_score}/10")
+                                                
+                                                if opt_verd == "BEARISH" or opt_score < min_options:
+                                                    logger.info(f"Skipping {symbol}: Options flow insufficient.")
+                                                    status = f"Skipped: Options Flow ({opt_verd}, Score: {opt_score})"
+                                                else:
+                                                    # I. Insider Trading Check
+                                                    min_insider = rules_cfg.get("min_insider_score", 5.0)
+                                                    ins_analysis = insider_agent.analyze(symbol)
+                                                    ins_score = ins_analysis.get("score", 5.0)
+                                                    ins_verd = ins_analysis.get("verdict", "NEUTRAL")
+                                                    logger.info(f"Insider Verdict for {symbol}: {ins_verd} | Score: {ins_score}/10")
+                                                    
+                                                    if ins_verd == "BEARISH" or ins_score < min_insider:
+                                                        logger.info(f"Skipping {symbol}: Insider trading insufficient.")
+                                                        status = f"Skipped: Insider Trading ({ins_verd}, Score: {ins_score})"
+                                                    else:
+                                                        # J. Tier-Specific Checks
+                                                        if tier == "penny":
+                                                            retail_analysis = retail_agent.analyze(symbol, cand.get("volume", 0), cand.get("avg_volume", 1))
+                                                            ret_verd = retail_analysis.get("verdict", "NEUTRAL")
+                                                            logger.info(f"Retail Sentiment Verdict for {symbol}: {ret_verd}")
+                                                            if ret_verd == "LOW_MOMENTUM":
+                                                                logger.info(f"Skipping {symbol}: Insufficient retail momentum for penny stock.")
+                                                                status = f"Skipped: Retail Momentum ({ret_verd})"
+                                                                
+                                                        if status.startswith("Passed") and tier == "low":
+                                                            min_div = rules_cfg.get("min_dividend_yield", 0.02)
+                                                            div_analysis = dividend_agent.analyze(symbol)
+                                                            div_verd = div_analysis.get("verdict", "NO_YIELD")
+                                                            yield_pct = div_analysis.get("dividend_yield", 0.0)
+                                                            logger.info(f"Dividend Verdict for {symbol}: {div_verd}")
+                                                            
+                                                            if div_verd in ["NO_YIELD", "YIELD_TRAP"] or yield_pct < min_div:
+                                                                logger.info(f"Skipping {symbol}: Dividend yield insufficient for low-risk tier.")
+                                                                status = f"Skipped: Dividend Yield ({div_verd})"
                     
                     # Log candidate evaluation snapshot
                     eval_entry = {
@@ -446,7 +563,18 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                             "growth_evaluated": "YES" if (tier in ["high", "moderate"] and growth_agent_enabled and fund_score is not None and (fund_verd == "UNFAVORABLE" or fund_score < min_fund)) else "NO",
                             "rnd_intensity_pct": rnd_intensity_pct,
                             "revenue_growth_pct": revenue_growth_pct,
-                            "net_margin_pct": net_margin_pct
+                            "net_margin_pct": net_margin_pct,
+                            "qual_score": qual_score if 'qual_score' in locals() else None,
+                            "qual_verdict": qual_verd if 'qual_verd' in locals() else None,
+                            "hist_score": hist_score if 'hist_score' in locals() else None,
+                            "hist_verdict": hist_verd if 'hist_verd' in locals() else None,
+                            "corr_verdict": corr_verd if 'corr_verd' in locals() else None,
+                            "opt_score": opt_score if 'opt_score' in locals() else None,
+                            "opt_verdict": opt_verd if 'opt_verd' in locals() else None,
+                            "ins_score": ins_score if 'ins_score' in locals() else None,
+                            "ins_verdict": ins_verd if 'ins_verd' in locals() else None,
+                            "ret_verdict": ret_verd if 'ret_verd' in locals() else None,
+                            "div_verdict": div_verd if 'div_verd' in locals() else None
                         }
                     }
                     evaluations.append(eval_entry)
@@ -493,11 +621,59 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                                 "tech_verdict": tech_verd,
                                 "fund_score": fund_score if not is_growth_reinvestment_play else growth_score,
                                 "fund_verdict": fund_verd if not is_growth_reinvestment_play else f"GROWTH_PLAY ({growth_verd})",
+                                "qual_score": qual_score,
+                                "hist_score": hist_score,
                                 "rnd_intensity_pct": rnd_intensity_pct,
                                 "revenue_growth_pct": revenue_growth_pct,
                                 "net_margin_pct": net_margin_pct
                             }
                         }
+                        
+                    # F. Speculative Options Execution
+                    if tier in ["high", "moderate"] and tech_verd == "BULLISH" and opt_verd == "BULLISH" and news_score is not None and news_score >= 6.5:
+                        options_pct = config.get("allocation", {}).get("options_pct", 0.20)
+                        target_opt_cap = net_liq * options_pct
+                        active_opts = state.get("active_options", {})
+                        deployed_opt_cap = sum(details.get("initial_capital", 0.0) for details in active_opts.values())
+                        available_opt_cap = target_opt_cap - deployed_opt_cap
+
+                        if available_opt_cap > 200:
+                            logger.info(f"Candidate {symbol} is highly rated (Tech: BULLISH, Options: BULLISH, News: {news_score}). Evaluating for Speculative Call Option...")
+                            from src.skills.market_data import SelectSpeculativeOptionSkill
+                            opt_skill = SelectSpeculativeOptionSkill()
+                            opt_data = opt_skill.execute(symbol, cand["close"], bias="bullish")
+
+                            if opt_data and "expiration" in opt_data:
+                                opt_price = opt_data.get("ask", 0) or opt_data.get("lastPrice", 0)
+                                if opt_price > 0:
+                                    # Risk max 25% of options cap per trade or $2000, whichever is smaller
+                                    trade_cap = min(available_opt_cap * 0.25, 2000.0)
+                                    qty_opts = int(trade_cap / (opt_price * 100))
+                                    if qty_opts > 0:
+                                        logger.info(f"Executing Speculative Call Option for {symbol}: {qty_opts} contracts of {opt_data['expiration']} ${opt_data['strike']} Call at ~${opt_price}")
+                                        opt_order_id = await broker.execute_option_buy(
+                                            symbol=symbol,
+                                            expiration=opt_data["expiration"],
+                                            strike=opt_data["strike"],
+                                            right=opt_data["right"],
+                                            quantity=qty_opts
+                                        )
+                                        if opt_order_id:
+                                            opt_key = f"{symbol}_{opt_data['expiration']}_{opt_data['strike']}{opt_data['right']}"
+                                            active_opts[opt_key] = {
+                                                "symbol": symbol,
+                                                "expiration": opt_data["expiration"],
+                                                "strike": opt_data["strike"],
+                                                "right": opt_data["right"],
+                                                "quantity": qty_opts,
+                                                "entry_price": opt_price,
+                                                "initial_capital": qty_opts * opt_price * 100,
+                                                "purchased_at": datetime.now().isoformat(),
+                                                "order_id": opt_order_id,
+                                                "analysis": eval_entry["analysis"]
+                                            }
+                                            state["active_options"] = active_opts
+                                            save_state(state)
                         slots_available -= 1
                         available_tier_cap -= sizing["capital_required"]
                         eval_entry["status"] = "Purchased (Growth Play)" if is_growth_reinvestment_play else "Purchased"
