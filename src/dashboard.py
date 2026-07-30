@@ -294,8 +294,15 @@ def get_latest_sourcing_logs():
     return []
 
 # Dashboard App Header
-st.title("📈 Intelligent Invest")
-st.subheader("Multi-Agent Quantitative Trading System Dashboard")
+colA, colB = st.columns([0.8, 0.2])
+with colA:
+    st.title("📈 Intelligent Invest")
+    st.subheader("Multi-Agent Quantitative Trading System Dashboard")
+with colB:
+    st.write("")
+    st.write("")
+    if st.button("🔄 Refresh Data", use_container_width=True):
+        st.rerun()
 
 # Fetch state and configuration
 state = load_state()
