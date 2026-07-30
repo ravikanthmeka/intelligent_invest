@@ -136,6 +136,69 @@ class FetchRecentNewsSkill(Skill):
                 
         return news_results
 
+class FetchSocialSentimentSkill(Skill):
+    def __init__(self):
+        super().__init__(
+            name="FetchSocialSentiment",
+            description="Fetches recent mentions and sentiment from social platforms like Reddit and X (Twitter)."
+        )
+
+    def execute(self, symbol: str) -> List[Dict[str, Any]]:
+        social_results = []
+        import os
+        import urllib.request
+        import json
+        
+        # 1. Reddit Scraping (Fallback to public JSON if no API keys)
+        reddit_client_id = os.environ.get("REDDIT_CLIENT_ID")
+        reddit_client_secret = os.environ.get("REDDIT_CLIENT_SECRET")
+        
+        try:
+            if reddit_client_id and reddit_client_secret:
+                # Stub for authenticated PRAW if the user provides keys
+                pass
+            else:
+                # Fallback to public JSON scraping
+                subreddits = ["wallstreetbets", "stocks", "investing"]
+                for sub in subreddits:
+                    url = f"https://www.reddit.com/r/{sub}/search.json?q={symbol}&restrict_sr=1&sort=new&limit=3"
+                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'})
+                    res = urllib.request.urlopen(req, timeout=5).read().decode('utf-8')
+                    data = json.loads(res)
+                    posts = data.get("data", {}).get("children", [])
+                    for post in posts:
+                        post_data = post.get("data", {})
+                        title = post_data.get("title", "")
+                        selftext = post_data.get("selftext", "")[:200]
+                        social_results.append({
+                            "platform": "Reddit",
+                            "source": f"r/{sub}",
+                            "content": f"{title} - {selftext}"
+                        })
+        except Exception as e:
+            logger.error(f"Error fetching Reddit sentiment for {symbol}: {e}")
+
+        # 2. X (Twitter) Scraping (Stub - X strictly requires API keys)
+        x_bearer_token = os.environ.get("X_BEARER_TOKEN")
+        try:
+            if x_bearer_token:
+                url = f"https://api.twitter.com/2/tweets/search/recent?query=%24{symbol}&max_results=10"
+                req = urllib.request.Request(url, headers={'Authorization': f'Bearer {x_bearer_token}'})
+                res = urllib.request.urlopen(req, timeout=5).read().decode('utf-8')
+                data = json.loads(res)
+                tweets = data.get("data", [])
+                for t in tweets:
+                    social_results.append({
+                        "platform": "X",
+                        "source": "Twitter",
+                        "content": t.get("text", "")
+                    })
+            else:
+                logger.info(f"Skipping X (Twitter) fetch for {symbol}: No X_BEARER_TOKEN in .env")
+        except Exception as e:
+            logger.error(f"Error fetching X sentiment for {symbol}: {e}")
+            
+        return social_results
 class FetchMacroDataSkill(Skill):
     def __init__(self):
         super().__init__(

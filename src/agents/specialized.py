@@ -393,11 +393,14 @@ class RetailSentimentAgent(Agent):
         super().__init__(name="RetailSentimentAgent", role="Evaluates retail meme stock hype and momentum.")
         self.llm = llm
         self.register_skill(FetchRecentNewsSkill()) # Reusing news skill for sentiment
+        from src.skills.market_data import FetchSocialSentimentSkill
+        self.register_skill(FetchSocialSentimentSkill())
         self.register_skill(RetailSentimentAnalysisSkill(llm))
 
     def analyze(self, symbol: str, volume: float, avg_volume: float) -> Dict[str, Any]:
         news = self.get_skill("FetchRecentNews").execute(symbol)
-        return self.get_skill("RetailSentimentAnalysis").execute(symbol, news, volume, avg_volume)
+        social = self.get_skill("FetchSocialSentiment").execute(symbol)
+        return self.get_skill("RetailSentimentAnalysis").execute(symbol, news, social, volume, avg_volume)
 
 class DividendIncomeAgent(Agent):
     def __init__(self, llm: LLMClient):

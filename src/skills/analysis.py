@@ -534,16 +534,22 @@ class RetailSentimentAnalysisSkill(Skill):
         super().__init__(name="RetailSentimentAnalysis", description="Evaluates retail sentiment/momentum.")
         self.llm = llm
 
-    def execute(self, symbol: str, news_items: List[Dict[str, Any]], volume: float, avg_volume: float) -> Dict[str, Any]:
+    def execute(self, symbol: str, news_items: List[Dict[str, Any]], social_items: List[Dict[str, Any]], volume: float, avg_volume: float) -> Dict[str, Any]:
         vol_spike = (volume / avg_volume) if avg_volume > 0 else 1.0
         
         news_summary = "\n".join([f"- {n.get('title')}" for n in news_items]) if news_items else "No news."
+        social_summary = "\n".join([f"- [{s.get('platform')}] {s.get('content')}" for s in social_items]) if social_items else "No social mentions found."
         
         prompt = f"""Evaluate the retail/meme stock sentiment for '{symbol}'.
         Today's Volume Spike vs Average: {vol_spike:.1f}x
-        Recent Headlines: {news_summary}
         
-        Is this stock currently driven by high retail FOMO or social momentum?
+        Recent Headlines: 
+        {news_summary}
+        
+        Recent Social Media Posts (Reddit/X):
+        {social_summary}
+        
+        Is this stock currently driven by high retail FOMO or social momentum? Factor in retail hype, emojis (🚀, 💎🙌), and social momentum alongside the volume spike data.
         Respond in JSON:
         {{
             "verdict": "HIGH_MOMENTUM" | "NEUTRAL" | "LOW_MOMENTUM",
@@ -558,10 +564,10 @@ class RetailSentimentAnalysisSkill(Skill):
             # Fallback algorithmic
             score = 5.0
             verdict = "NEUTRAL"
-            if vol_spike > 2.5:
+            if vol_spike > 2.5 or (social_items and vol_spike > 1.5):
                 score = 8.5
                 verdict = "HIGH_MOMENTUM"
-            return {"verdict": verdict, "score": score, "rationale": f"Volume spike {vol_spike:.1f}x."}
+            return {"verdict": verdict, "score": score, "rationale": f"Volume spike {vol_spike:.1f}x (with social={bool(social_items)})."}
 
 class DividendIncomeAnalysisSkill(Skill):
     def __init__(self, llm: LLMClient):
