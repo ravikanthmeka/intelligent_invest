@@ -735,3 +735,43 @@ Respond strictly in JSON:
         except Exception as e:
             logger.error(f"Error analyzing merger arbitrage for {symbol}: {e}")
             return {"arbitrage_found": False, "is_actionable": False, "rationale": f"Analysis error: {e}"}
+
+class BrainstormingSkill(Skill):
+    def __init__(self, llm: LLMClient):
+        super().__init__(
+            name="BrainstormingSkill",
+            description="Generates a high-level macro brainstorming report with 3-5 actionable themes."
+        )
+        self.llm = llm
+
+    def execute(self, macro_data: str, news_data: str) -> str:
+        from datetime import datetime
+        prompt = f"""You are a top-tier Quantitative Macro Analyst and Head of Strategy for a quantitative hedge fund.
+Your task is to proactively brainstorm and synthesize a daily macro strategy report based on the provided current macro data and latest news.
+
+Macro Data Context:
+{macro_data}
+
+Latest Global News Context:
+{news_data}
+
+Instructions:
+1. Synthesize the current macro regime (e.g. risk-on/off, inflationary, etc.).
+2. Pitch 3 to 5 highly actionable trading themes or strategies based on this data. Be specific (mention sectors, asset classes, or specific setup structures like Options Wheel on Tech, or Merger Arb in Healthcare).
+3. Format the output in a clean, readable Markdown format suitable for an email to a Portfolio Manager. Do not use JSON.
+
+Structure your report:
+# 🧠 Daily Macro & Strategy Brainstorm
+**Date:** {datetime.now().strftime('%Y-%m-%d')}
+## 🌍 Macro Regime Summary
+(1-2 paragraphs)
+## 💡 Top Trade Ideas
+1. **[Theme Name]**: Rationale...
+2. ...
+"""
+        try:
+            res = self.llm.call(prompt, system_prompt="You are a brilliant macro trading strategist.")
+            return res.strip()
+        except Exception as e:
+            logger.error(f"Error generating brainstorming report: {e}")
+            return "Failed to generate brainstorming report due to internal error."

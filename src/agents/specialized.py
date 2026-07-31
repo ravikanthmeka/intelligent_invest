@@ -526,3 +526,19 @@ class MergerArbitrageAgent(Agent):
     def analyze(self, symbol: str, current_price: float) -> Dict[str, Any]:
         news = self.get_skill("FetchRecentNews").execute(symbol)
         return self.get_skill("MergerArbitrageAnalysis").execute(symbol, news, current_price)
+
+class BrainstormingAgent(Agent):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="BrainstormingAgent", role="Proactively brainstorms macro trading strategies.")
+        self.llm = llm
+        
+        # We need to fetch generic macro/news data to feed the brainstorm skill. 
+        # Using SPY as a broad market proxy for news.
+        self.register_skill(FetchRecentNewsSkill())
+        from src.skills.analysis import BrainstormingSkill
+        self.register_skill(BrainstormingSkill(llm))
+
+    def brainstorm(self, macro_data: str) -> str:
+        # Fetching broad market news
+        news_data = self.get_skill("FetchRecentNews").execute("SPY")
+        return self.get_skill("BrainstormingSkill").execute(macro_data, news_data)

@@ -34,8 +34,10 @@ from src.agents.specialized import (
     EarningsCatalystAgent,
     PortfolioHedgingAgent,
     MergerArbitrageAgent,
-    OptionsWheelAgent
+    OptionsWheelAgent,
+    BrainstormingAgent
 )
+from src.notifications import NotificationClient
 
 # Setup logging
 logging.basicConfig(
@@ -134,6 +136,8 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
     hedge_agent = PortfolioHedgingAgent(llm=llm)
     merger_arb_agent = MergerArbitrageAgent(llm=llm)
     wheel_agent = OptionsWheelAgent(llm=llm)
+    brainstorming_agent = BrainstormingAgent(llm=llm)
+    notification_client = NotificationClient()
     
     risk_agent = RiskAgent(
         max_positions=config.get("risk", {}).get("max_positions", 5),
@@ -176,6 +180,25 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
         macro_multiplier = macro_result.get("risk_multiplier", 1.0)
         macro_themes = macro_result.get("suggested_themes", [])
         logger.info(f"Macro Posture: {macro_posture} | Risk Multiplier: {macro_multiplier} | Themes: {macro_themes}")
+
+        # 2.6 Dynamic Brainstorming Notification
+        last_brainstorm = state.get("last_brainstorm_date", "")
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        if last_brainstorm != today_str:
+            logger.info("Executing daily macro brainstorming...")
+            try:
+                # We pass the formatted macro output to the brainstorming agent
+                import json
+                macro_data_str = json.dumps(macro_result, indent=2)
+                brainstorm_report = brainstorming_agent.brainstorm(macro_data_str)
+                
+                # Send the notification
+                notification_client.send_brainstorm_alert("Daily Macro & Strategy Brainstorm", brainstorm_report)
+                
+                state["last_brainstorm_date"] = today_str
+                state["latest_brainstorm_report"] = brainstorm_report
+            except Exception as e:
+                logger.error(f"Failed to execute daily brainstorm: {e}")
 
         logger.info("Evaluating Global Sector Rotation...")
         sector_result = sector_agent.evaluate_sectors()
