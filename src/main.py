@@ -233,8 +233,11 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
 
         # Sync local state with actual broker positions (remove closed trades)
         broker_symbols = {pos["symbol"] for pos in broker_positions}
+        pending_symbols = await broker.get_pending_symbols()
+        active_broker_symbols = broker_symbols.union(pending_symbols)
+        
         for symbol in list(active_trades.keys()):
-            if symbol not in broker_symbols:
+            if symbol not in active_broker_symbols:
                 logger.info(f"Removing {symbol} from tracking state (no longer active in broker portfolio).")
                 # Archive the stop loss hit
                 trade_info = active_trades[symbol]

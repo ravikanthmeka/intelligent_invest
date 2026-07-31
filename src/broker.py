@@ -97,6 +97,25 @@ class BrokerAgent:
         except Exception as e:
             logger.error(f"Error fetching positions: {e}")
             return []
+            
+    async def get_pending_symbols(self) -> set:
+        """
+        Returns a set of symbols for which there are pending (unfilled) orders.
+        """
+        if self.dry_run:
+            return set()
+            
+        try:
+            open_trades = self.ib.openTrades()
+            pending_symbols = set()
+            for trade in open_trades:
+                # We consider anything not filled or cancelled as pending (e.g. Submitted, PreSubmitted, PendingSubmit)
+                if trade.orderStatus.status not in ["Filled", "Cancelled", "Inactive"]:
+                    pending_symbols.add(trade.contract.symbol)
+            return pending_symbols
+        except Exception as e:
+            logger.error(f"Error fetching pending orders: {e}")
+            return set()
 
     async def execute_buy(self, symbol: str, quantity: int, stop_loss_price: float) -> Optional[str]:
         """
