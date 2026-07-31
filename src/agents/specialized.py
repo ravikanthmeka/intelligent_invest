@@ -39,6 +39,24 @@ class MarketScannerAgent(Agent):
             logger.error(f"Error fetching S&P 500 tickers: {e}")
             return []
 
+    def _fetch_nasdaq_tickers(self) -> List[str]:
+        try:
+            import urllib.request
+            url = "https://raw.githubusercontent.com/datasets/nasdaq-listings/master/data/nasdaq-listed.csv"
+            res = urllib.request.urlopen(url, timeout=5).read().decode('utf-8')
+            lines = res.split('\n')
+            tickers = [line.split(',')[0].strip().upper() for line in lines[1:] if line]
+            # Replace dot with hyphen for Yahoo Finance compatibility
+            cleaned = []
+            for t in tickers:
+                t_clean = t.replace(".", "-")
+                if t_clean:
+                    cleaned.append(t_clean)
+            return cleaned
+        except Exception as e:
+            logger.error(f"Error fetching Nasdaq tickers: {e}")
+            return []
+
     def scan(self) -> List[Dict[str, Any]]:
         return self.scan_tier("moderate")
 
@@ -70,19 +88,24 @@ class MarketScannerAgent(Agent):
             # Use dynamic market sampling for standard risk tiers if enabled
             if self.dynamic_market_scanning and risk_tier in ["high", "moderate", "low"]:
                 sp500_list = self._fetch_sp500_tickers()
+                nasdaq_list = self._fetch_nasdaq_tickers()
+                dow_list = ["AAPL", "AMGN", "AXP", "BA", "CAT", "CRM", "CSCO", "CVX", "DIS", "DOW", "GS", "HD", "HON", "IBM", "INTC", "JNJ", "JPM", "KO", "MCD", "MMM", "MRK", "MSFT", "NKE", "PG", "TRV", "UNH", "V", "VZ", "WBA", "WMT"]
+                etf_list = ["QQQ", "DIA", "IWM", "VXX", "VIXY"] # Including Russell and VIX trackers
+                
+                broad_market_list = list(set(sp500_list + nasdaq_list + dow_list + etf_list))
                 
                 watchlist_pool = [t for t in self.tickers if t not in self.blacklist]
-                sp500_pool = [t for t in sp500_list if t not in self.blacklist and t not in watchlist_pool]
+                broad_pool = [t for t in broad_market_list if t not in self.blacklist and t not in watchlist_pool]
                 
-                # Always include the user's watchlist, and fill the rest of the 40 slots with random S&P 500
-                num_sp500_to_sample = max(0, 40 - len(watchlist_pool))
-                sampled_sp500 = random.sample(sp500_pool, min(len(sp500_pool), num_sp500_to_sample))
-                sampled_tickers = watchlist_pool + sampled_sp500
+                # Always include the user's watchlist, and fill the rest of the 100 slots with random broad market stocks
+                num_to_sample = max(0, 100 - len(watchlist_pool))
+                sampled_broad = random.sample(broad_pool, min(len(broad_pool), num_to_sample))
+                sampled_tickers = watchlist_pool + sampled_broad
                 
-                logger.info(f"Dynamically sampled {len(sampled_tickers)} broad-market tickers (including {len(watchlist_pool)} from watchlist) for {risk_tier} screening: {sampled_tickers}")
+                logger.info(f"Dynamically sampled {len(sampled_tickers)} broad-market tickers (including {len(watchlist_pool)} from watchlist) for {risk_tier} screening.")
                 
                 prompt = f"""
-                From the following list of 40 stock tickers, select the 12 most promising tickers that fit the '{risk_tier}' risk profile:
+                From the following list of {len(sampled_tickers)} stock tickers, select the 15 most promising tickers that fit the '{risk_tier}' risk profile:
                 Tickers: {sampled_tickers}
                 
                 Guidelines: {guidelines}
