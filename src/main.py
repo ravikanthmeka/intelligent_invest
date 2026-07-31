@@ -33,7 +33,8 @@ from src.agents.specialized import (
     VolatilityArbitrageAgent,
     EarningsCatalystAgent,
     PortfolioHedgingAgent,
-    MergerArbitrageAgent
+    MergerArbitrageAgent,
+    OptionsWheelAgent
 )
 
 # Setup logging
@@ -132,6 +133,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
     earnings_agent = EarningsCatalystAgent(llm=llm)
     hedge_agent = PortfolioHedgingAgent(llm=llm)
     merger_arb_agent = MergerArbitrageAgent(llm=llm)
+    wheel_agent = OptionsWheelAgent(llm=llm)
     
     risk_agent = RiskAgent(
         max_positions=config.get("risk", {}).get("max_positions", 5),
@@ -710,6 +712,63 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
             if available_opt_cap > 200:
                 logger.info(f"--- Starting Options Portfolio Scan (Available Cap: ${available_opt_cap:,.2f}) ---")
                 
+                ## --- 3a. Options Wheel Strategy ---
+                wheel_portfolio = state.get("wheel_portfolio", {})
+                watchlist = config.get("watchlist", [])
+                
+                for symbol in watchlist:
+                    if available_opt_cap <= 200:
+                        break
+                        
+                    # Check if we already have an active wheel trade for this symbol
+                    already_wheeling = any(p["symbol"] == symbol for p in wheel_portfolio.values())
+                    if already_wheeling:
+                        continue
+                        
+                    logger.info(f"Evaluating {symbol} for Options Wheel Strategy (Phase 1: CSP)...")
+                    try:
+                        current_price = yf.Ticker(symbol).history(period="1d")['Close'].iloc[-1]
+                        
+                        # Ensure we have enough capital to Cash Secure the Put (approx 100 shares)
+                        if available_opt_cap < (current_price * 100 * 0.8): # roughly 80% check before exact strike
+                            logger.info(f"Skipping {symbol} for CSP: Insufficient options capital (${available_opt_cap:,.2f}).")
+                            continue
+                            
+                        wheel_eval = wheel_agent.analyze(symbol, current_price, phase="CSP")
+                        if wheel_eval.get("verdict") == "SELECTED":
+                            opt_data = wheel_eval["option"]
+                            strike = opt_data["strike"]
+                            required_capital = strike * 100
+                            
+                            if available_opt_cap >= required_capital:
+                                opt_price = opt_data.get("bid", 0) or opt_data.get("lastPrice", 0)
+                                logger.info(f"Executing CSP for {symbol}: SELL 1 contract of {opt_data['expiration']} ${strike}P at ~${opt_price}")
+                                opt_order_id = await broker.execute_option_sell(
+                                    symbol=symbol,
+                                    expiration=opt_data["expiration"],
+                                    strike=strike,
+                                    right=opt_data["right"],
+                                    quantity=1
+                                )
+                                if opt_order_id:
+                                    wheel_key = f"{symbol}_CSP_{opt_data['expiration']}_{strike}"
+                                    wheel_portfolio[wheel_key] = {
+                                        "symbol": symbol,
+                                        "phase": "CSP",
+                                        "expiration": opt_data["expiration"],
+                                        "strike": strike,
+                                        "quantity": 1,
+                                        "entry_premium": opt_price,
+                                        "collateral_locked": required_capital,
+                                        "purchased_at": datetime.now().isoformat(),
+                                        "order_id": opt_order_id
+                                    }
+                                    state["wheel_portfolio"] = wheel_portfolio
+                                    available_opt_cap -= required_capital
+                    except Exception as e:
+                        logger.error(f"Error evaluating Wheel for {symbol}: {e}")
+                
+                ## --- 3b. Speculative Options ---
                 # Retrieve options universe using High Risk tier candidates for momentum
                 options_candidates = scanner.scan_tier("high")
                 

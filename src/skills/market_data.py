@@ -374,6 +374,77 @@ class SelectSpeculativeOptionSkill(Skill):
             logger.error(f"Error selecting option for {symbol}: {e}")
             return {}
 
+class SelectWheelOptionSkill(Skill):
+    def __init__(self):
+        super().__init__(
+            name="SelectWheelOption",
+            description="Selects an OTM option for the Wheel strategy (CSP or CC) ~30-45 DTE."
+        )
+
+    def execute(self, symbol: str, current_price: float, phase: str = "CSP", assignment_price: float = 0.0) -> Dict[str, Any]:
+        try:
+            ticker = yf.Ticker(symbol)
+            expirations = ticker.options
+            if not expirations:
+                return {}
+            
+            from datetime import datetime, timedelta
+            target_date = datetime.now() + timedelta(days=35)
+            
+            # Find closest expiration to 35 days
+            best_exp = expirations[0]
+            min_diff = 9999
+            for exp in expirations:
+                exp_date = datetime.strptime(exp, "%Y-%m-%d")
+                diff = abs((exp_date - target_date).days)
+                if diff < min_diff:
+                    min_diff = diff
+                    best_exp = exp
+            
+            chain = ticker.option_chain(best_exp)
+            
+            if phase == "CSP":
+                options_df = chain.puts
+                right = "P"
+                # For CSP, we want an OTM Put (strike < current_price)
+                options_df = options_df[options_df['strike'] < current_price]
+            else: # CC
+                options_df = chain.calls
+                right = "C"
+                # For CC, we want an OTM Call (strike > current_price AND strike > assignment_price)
+                target_strike_min = max(current_price, assignment_price)
+                options_df = options_df[options_df['strike'] > target_strike_min]
+            
+            if options_df.empty:
+                return {}
+                
+            # Find strike roughly ~0.30 Delta. Without full Greeks from yfinance, 
+            # we can approximate an OTM strike 5-10% away from current price.
+            if phase == "CSP":
+                # Find strike closest to 95% of current price
+                target_strike = current_price * 0.95
+            else:
+                # Find strike closest to 105% of current price (or assignment price)
+                target_strike_min = max(current_price, assignment_price)
+                target_strike = target_strike_min * 1.05
+                
+            options_df['strike_diff'] = abs(options_df['strike'] - target_strike)
+            options_df = options_df.sort_values(by='strike_diff')
+            selected_option = options_df.iloc[0]
+            
+            return {
+                "symbol": symbol,
+                "expiration": best_exp,
+                "strike": float(selected_option['strike']),
+                "right": right,
+                "lastPrice": float(selected_option['lastPrice']),
+                "bid": float(selected_option['bid']) if 'bid' in selected_option else 0.0,
+                "ask": float(selected_option['ask']) if 'ask' in selected_option else 0.0,
+                "volume": int(selected_option['volume']) if not pd.isna(selected_option['volume']) else 0
+            }
+        except Exception as e:
+            logger.error(f"Error selecting wheel option for {symbol}: {e}")
+            return {}
 
 class FetchInsiderTradingSkill(Skill):
     def __init__(self):

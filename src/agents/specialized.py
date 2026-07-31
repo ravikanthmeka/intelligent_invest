@@ -478,6 +478,34 @@ class EarningsCatalystAgent(Agent):
         data = self.get_skill("FetchEarningsCatalystData").execute(symbol)
         return self.get_skill("EarningsCatalyst").execute(symbol, data)
 
+class OptionsWheelAgent(Agent):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="OptionsWheelAgent", role="Evaluates stocks for Cash-Secured Puts (CSP) or Covered Calls (CC).")
+        self.llm = llm
+        from src.skills.market_data import SelectWheelOptionSkill
+        self.register_skill(SelectWheelOptionSkill())
+
+    def analyze(self, symbol: str, current_price: float, phase: str = "CSP", assignment_price: float = 0.0) -> Dict[str, Any]:
+        """
+        phase: 'CSP' (Cash-Secured Put) or 'CC' (Covered Call)
+        """
+        opt_data = self.get_skill("SelectWheelOption").execute(symbol, current_price, phase, assignment_price)
+        
+        if not opt_data:
+            return {"verdict": "NO_OPTIONS", "option": None}
+            
+        # Basic sanity check
+        if phase == "CSP" and opt_data["strike"] >= current_price:
+            return {"verdict": "INVALID_STRIKE", "option": None}
+        if phase == "CC" and opt_data["strike"] <= assignment_price and assignment_price > 0:
+            return {"verdict": "INVALID_STRIKE", "option": None}
+            
+        return {
+            "verdict": "SELECTED",
+            "option": opt_data
+        }
+
+
 class PortfolioHedgingAgent(Agent):
     def __init__(self, llm: LLMClient):
         super().__init__(name="PortfolioHedgingAgent", role="Evaluates portfolio delta/beta and macro state for hedging.")

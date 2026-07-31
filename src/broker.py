@@ -157,6 +157,29 @@ class BrokerAgent:
             logger.error(f"Error executing option buy order for {symbol}: {e}")
             return None
 
+    async def execute_option_sell(self, symbol: str, expiration: str, strike: float, right: str, quantity: int) -> Optional[str]:
+        """
+        Executes a Market Sell to Open (or Sell to Close) order for an option contract.
+        """
+        if self.dry_run:
+            logger.info(f"[DRY RUN] Option Sell Order Executed: SELL {quantity} contracts of {symbol} {expiration} {strike}{right}")
+            return "dry_run_opt_sell_id"
+
+        try:
+            ib_exp = expiration.replace("-", "")
+            contract = Option(symbol, ib_exp, strike, right, "SMART", multiplier="100", currency="USD")
+            await self.ib.qualifyContractsAsync(contract)
+
+            # Create Market Sell order
+            order = MarketOrder("SELL", quantity)
+            trade = self.ib.placeOrder(contract, order)
+            
+            logger.info(f"Placed Option Sell for {symbol} {ib_exp} {strike}{right}: OrderId {trade.order.orderId}")
+            return str(trade.order.orderId)
+        except Exception as e:
+            logger.error(f"Error executing option sell order for {symbol}: {e}")
+            return None
+
     async def update_stop_loss(self, symbol: str, new_stop_price: float) -> bool:
         """
         Finds and updates the existing Stop Loss order for a symbol to a new price.
