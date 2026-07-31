@@ -70,13 +70,16 @@ class MarketScannerAgent(Agent):
             # Use dynamic market sampling for standard risk tiers if enabled
             if self.dynamic_market_scanning and risk_tier in ["high", "moderate", "low"]:
                 sp500_list = self._fetch_sp500_tickers()
-                combined_pool = list(set(self.tickers + sp500_list))
-                # Filter out blacklisted tickers
-                combined_pool = [t for t in combined_pool if t not in self.blacklist]
                 
-                # Sample 40 tickers
-                sampled_tickers = random.sample(combined_pool, min(len(combined_pool), 40))
-                logger.info(f"Dynamically sampled 40 broad-market tickers for {risk_tier} screening: {sampled_tickers}")
+                watchlist_pool = [t for t in self.tickers if t not in self.blacklist]
+                sp500_pool = [t for t in sp500_list if t not in self.blacklist and t not in watchlist_pool]
+                
+                # Always include the user's watchlist, and fill the rest of the 40 slots with random S&P 500
+                num_sp500_to_sample = max(0, 40 - len(watchlist_pool))
+                sampled_sp500 = random.sample(sp500_pool, min(len(sp500_pool), num_sp500_to_sample))
+                sampled_tickers = watchlist_pool + sampled_sp500
+                
+                logger.info(f"Dynamically sampled {len(sampled_tickers)} broad-market tickers (including {len(watchlist_pool)} from watchlist) for {risk_tier} screening: {sampled_tickers}")
                 
                 prompt = f"""
                 From the following list of 40 stock tickers, select the 12 most promising tickers that fit the '{risk_tier}' risk profile:

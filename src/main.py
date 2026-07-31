@@ -459,6 +459,24 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                         
                     if symbol in active_trades:
                         continue  # Already in portfolio
+                        
+                    # Filter out recently traded tickers (7 day cooldown)
+                    recently_traded = False
+                    completed_trades = state.get("completed_trades", [])
+                    for trade in reversed(completed_trades):
+                        if trade.get("symbol") == symbol:
+                            sold_at_str = trade.get("sold_at")
+                            if sold_at_str:
+                                try:
+                                    sold_at = datetime.fromisoformat(sold_at_str)
+                                    if (datetime.now() - sold_at).days < 7:
+                                        recently_traded = True
+                                        break
+                                except Exception:
+                                    pass
+                    if recently_traded:
+                        logger.info(f"Skipping {symbol}: Traded recently (cooldown active).")
+                        continue
                     
                     if slots_available <= 0:
                         break
