@@ -12,8 +12,8 @@ allocation:
   options_pct: 0.20
 
 llm:
-  provider: "bedrock"  # Options: "bedrock" or "openai"
-  model: "google.gemma-3-12b-it"  # Supported Bedrock model IDs, or OpenAI models like "gpt-4o"
+  provider: "openai"  # Options: "bedrock" or "openai"
+  model: "gpt-4o"  # Supported Bedrock model IDs, or OpenAI models like "gpt-4o"
 
 broker:
   host: "127.0.0.1"

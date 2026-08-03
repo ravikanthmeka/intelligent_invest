@@ -32,7 +32,31 @@ class LLMClient:
         Uniform text generation interface.
         """
         if self.provider == "openai":
-            return self._call_openai(prompt, system_prompt, temperature, max_tokens)
+            try:
+                return self._call_openai(prompt, system_prompt, temperature, max_tokens)
+            except Exception as e:
+                import logging
+                logger = logging.getLogger("LLMClient")
+                logger.error(f"OpenAI call failed: {e}. Falling back to Bedrock (Gemma).")
+                
+                try:
+                    from src.notifications import NotificationClient
+                    NotificationClient().send_brainstorm_alert("LLM Fallback Alert", f"OpenAI failed with error: {e}. Falling back to Bedrock.")
+                except Exception as notif_e:
+                    logger.error(f"Failed to send fallback notification: {notif_e}")
+                    
+                # Initialize bedrock client if not already initialized
+                if not hasattr(self, 'bedrock_client'):
+                    self.bedrock_client = boto3.client(
+                        service_name="bedrock-runtime",
+                        region_name=os.getenv("AWS_REGION") or "us-east-1"
+                    )
+                # Fallback to Bedrock implementation
+                original_model = self.model
+                self.model = "google.gemma-3-12b-it" 
+                res = self._call_bedrock(prompt, system_prompt, temperature, max_tokens)
+                self.model = original_model
+                return res
         elif self.provider == "bedrock":
             return self._call_bedrock(prompt, system_prompt, temperature, max_tokens)
         else:
