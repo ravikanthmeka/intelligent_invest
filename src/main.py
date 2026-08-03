@@ -766,8 +766,17 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                                                             if div_verd in ["NO_YIELD", "YIELD_TRAP"] or yield_pct < min_div:
                                                                 logger.info(f"Skipping {symbol}: Dividend yield insufficient for low-risk tier.")
                                                                 status = f"Skipped: Dividend Yield ({div_verd})"
-                    
                     # Options Evaluation removed - moved to separate loop
+                    eval_entry = {
+                        "symbol": symbol,
+                        "tier": tier,
+                        "status": status,
+                        "news_score": news_score,
+                        "tech_score": tech_score,
+                        "fund_score": fund_score,
+                        "growth_score": growth_score,
+                        "timestamp": datetime.now().isoformat()
+                    }
                     evaluations.append(eval_entry)
                     
                     if status != "Passed":
