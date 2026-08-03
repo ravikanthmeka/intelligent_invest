@@ -85,6 +85,8 @@ class BrokerAgent:
                 # item: PortfolioItem
                 positions_data.append({
                     "symbol": item.contract.symbol,
+                    "sec_type": item.contract.secType,
+                    "local_symbol": item.contract.localSymbol,
                     "shares": item.position,
                     "average_cost": item.marketPrice - (item.unrealizedPNL / item.position) if item.position != 0 else item.averageCost,
                     "market_price": item.marketPrice,
@@ -100,7 +102,7 @@ class BrokerAgent:
             
     async def get_pending_symbols(self) -> set:
         """
-        Returns a set of symbols for which there are pending (unfilled) orders.
+        Returns a set of tuples (symbol, secType) for which there are pending (unfilled) orders.
         """
         if self.dry_run:
             return set()
@@ -111,7 +113,7 @@ class BrokerAgent:
             for trade in open_trades:
                 # We consider anything not filled or cancelled as pending (e.g. Submitted, PreSubmitted, PendingSubmit)
                 if trade.orderStatus.status not in ["Filled", "Cancelled", "Inactive"]:
-                    pending_symbols.add(trade.contract.symbol)
+                    pending_symbols.add((trade.contract.symbol, trade.contract.secType))
             return pending_symbols
         except Exception as e:
             logger.error(f"Error fetching pending orders: {e}")

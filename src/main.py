@@ -232,9 +232,13 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
         logger.info(f"Found {len(broker_positions)} active positions in broker account.")
 
         # Sync local state with actual broker positions (remove closed trades)
-        broker_symbols = {pos["symbol"] for pos in broker_positions}
-        pending_symbols = await broker.get_pending_symbols()
-        active_broker_symbols = broker_symbols.union(pending_symbols)
+        broker_stock_positions = [p for p in broker_positions if p.get("sec_type") == "STK"]
+        broker_option_positions = [p for p in broker_positions if p.get("sec_type") == "OPT"]
+        
+        broker_stocks = {pos["symbol"] for pos in broker_stock_positions}
+        broker_options = {pos["symbol"] for pos in broker_option_positions}
+        pending_symbols = {sym for sym, sec in await broker.get_pending_symbols() if sec == "STK"}
+        active_broker_symbols = broker_stocks.union(pending_symbols)
         
         for symbol in list(active_trades.keys()):
             if symbol not in active_broker_symbols:
@@ -267,7 +271,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                 del active_trades[symbol]
 
         # 4. Evaluate existing positions (Trailing Stops / Profit Targets)
-        for pos in broker_positions:
+        for pos in broker_stock_positions:
             symbol = pos["symbol"]
             current_price = pos["market_price"]
             avg_cost = pos["average_cost"]
@@ -359,6 +363,98 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
         state["active_trades"] = active_trades
         save_state(state)
 
+        # --- 4b. Evaluate Speculative Options (Profit Targets / Stop Loss) ---
+        active_opts = state.get("active_options", {})
+        for opt_key in list(active_opts.keys()):
+            opt_info = active_opts[opt_key]
+            symbol = opt_info["symbol"]
+            expiration = opt_info["expiration"]
+            strike = opt_info["strike"]
+            right = opt_info["right"]
+            
+            ib_exp = expiration.replace("-", "")
+            pos = next((p for p in broker_option_positions if p["symbol"] == symbol and p["contract"].lastTradeDateOrContractMonth == ib_exp and p["contract"].strike == strike and p["contract"].right == right), None)
+            
+            if not pos:
+                logger.info(f"Removing speculative option {opt_key} (no longer active in broker portfolio).")
+                completed_trade = opt_info.copy()
+                completed_trade["status"] = "Closed"
+                completed_trade["closed_at"] = datetime.now().isoformat()
+                state.setdefault("completed_trades", []).append(completed_trade)
+                del active_opts[opt_key]
+                continue
+                
+            current_price = pos["market_price"]
+            entry_price = opt_info["entry_price"]
+            unrealized_pct = (current_price - entry_price) / entry_price if entry_price else 0.0
+            
+            logger.info(f"Evaluating Option {opt_key} | Entry: ${entry_price:.2f} | Current: ${current_price:.2f} | Return: {unrealized_pct*100:.2f}%")
+            
+            if unrealized_pct >= 0.50 or unrealized_pct <= -0.30:
+                reason = "Profit Target Reached" if unrealized_pct >= 0.50 else "Stop Loss Hit"
+                logger.info(f"Closing speculative option {opt_key} ({reason}: {unrealized_pct:.1%})")
+                order_id = await broker.execute_option_sell(
+                    symbol=symbol,
+                    expiration=expiration,
+                    strike=strike,
+                    right=right,
+                    quantity=opt_info["quantity"]
+                )
+                if order_id:
+                    completed_trade = opt_info.copy()
+                    completed_trade["status"] = reason
+                    completed_trade["closed_at"] = datetime.now().isoformat()
+                    completed_trade["exit_price"] = current_price
+                    completed_trade["realized_pnl"] = (current_price - entry_price) * opt_info["quantity"] * 100
+                    state.setdefault("completed_trades", []).append(completed_trade)
+                    del active_opts[opt_key]
+                    
+        state["active_options"] = active_opts
+        save_state(state)
+
+        # --- 4c. Evaluate Wheel Portfolio (Assignment & Phase 2) ---
+        wheel_portfolio = state.get("wheel_portfolio", {})
+        for wheel_key in list(wheel_portfolio.keys()):
+            wheel_info = wheel_portfolio[wheel_key]
+            phase = wheel_info["phase"]
+            symbol = wheel_info["symbol"]
+            
+            if phase == "CSP":
+                expiration = wheel_info["expiration"]
+                strike = wheel_info["strike"]
+                ib_exp = expiration.replace("-", "")
+                
+                pos = next((p for p in broker_option_positions if p["symbol"] == symbol and p["contract"].lastTradeDateOrContractMonth == ib_exp and p["contract"].strike == strike and p["contract"].right == "P"), None)
+                
+                if not pos:
+                    stock_pos = next((p for p in broker_stock_positions if p["symbol"] == symbol and p["shares"] >= 100), None)
+                    if stock_pos:
+                        logger.info(f"Wheel Strategy {symbol}: CSP assigned. Transitioning to Phase 2 (Covered Call).")
+                        wheel_info["phase"] = "CC"
+                        wheel_info["assignment_price"] = strike
+                        wheel_info["assigned_at"] = datetime.now().isoformat()
+                        if "collateral_locked" in wheel_info:
+                            del wheel_info["collateral_locked"]
+                    else:
+                        logger.info(f"Wheel Strategy {symbol}: CSP closed/expired without assignment. Releasing capital.")
+                        completed_trade = wheel_info.copy()
+                        completed_trade["status"] = "Expired Worthless / Closed"
+                        completed_trade["closed_at"] = datetime.now().isoformat()
+                        state.setdefault("completed_trades", []).append(completed_trade)
+                        del wheel_portfolio[wheel_key]
+                        
+            elif phase == "CC":
+                stock_pos = next((p for p in broker_stock_positions if p["symbol"] == symbol and p["shares"] >= 100), None)
+                if not stock_pos:
+                    logger.info(f"Wheel Strategy {symbol}: Stock called away. Strategy complete.")
+                    completed_trade = wheel_info.copy()
+                    completed_trade["status"] = "Called Away"
+                    completed_trade["closed_at"] = datetime.now().isoformat()
+                    state.setdefault("completed_trades", []).append(completed_trade)
+                    del wheel_portfolio[wheel_key]
+                    
+        state["wheel_portfolio"] = wheel_portfolio
+        save_state(state)
         # 5. Scan for new entries if we have empty slots
         active_positions_count = len(active_trades)
         max_positions = config.get("risk", {}).get("max_positions", 5)
