@@ -12,8 +12,16 @@ class CalculatePositionSizeSkill(Skill):
         self.min_stop_loss_pct = min_stop_loss_pct
         self.max_stop_loss_pct = max_stop_loss_pct
 
-    def execute(self, portfolio_value: float, entry_price: float, atr: float, risk_pct: float = None, max_cap_pct: float = None, min_stop_loss_pct: float = None, max_stop_loss_pct: float = None, available_tier_capital: float = None, size_by_capital: bool = False) -> Dict[str, Any]:
+    def execute(self, portfolio_value: float, entry_price: float, atr: float, risk_pct: float = None, max_cap_pct: float = None, min_stop_loss_pct: float = None, max_stop_loss_pct: float = None, available_tier_capital: float = None, size_by_capital: bool = False, confidence_score: float = None) -> Dict[str, Any]:
         r_pct = risk_pct if risk_pct is not None else self.risk_pct
+        
+        # Scale risk based on confidence score (from 0 to 10)
+        if confidence_score is not None:
+            if confidence_score >= 8.0:
+                r_pct *= 1.2
+            elif confidence_score < 6.0:
+                r_pct *= 0.5
+                
         c_pct = max_cap_pct if max_cap_pct is not None else self.max_cap_pct
         min_sl = min_stop_loss_pct if min_stop_loss_pct is not None else self.min_stop_loss_pct
         max_sl = max_stop_loss_pct if max_stop_loss_pct is not None else self.max_stop_loss_pct

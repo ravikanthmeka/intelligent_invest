@@ -88,21 +88,21 @@ class MarketScannerAgent(Agent):
             # Use dynamic market sampling for standard risk tiers if enabled
             if self.dynamic_market_scanning and risk_tier in ["high", "moderate", "low"]:
                 sp500_list = self._fetch_sp500_tickers()
-                nasdaq_list = self._fetch_nasdaq_tickers()
                 dow_list = ["AAPL", "AMGN", "AXP", "BA", "CAT", "CRM", "CSCO", "CVX", "DIS", "DOW", "GS", "HD", "HON", "IBM", "INTC", "JNJ", "JPM", "KO", "MCD", "MMM", "MRK", "MSFT", "NKE", "PG", "TRV", "UNH", "V", "VZ", "WBA", "WMT"]
                 etf_list = ["QQQ", "DIA", "IWM", "VXX", "VIXY"] # Including Russell and VIX trackers
                 
-                broad_market_list = list(set(sp500_list + nasdaq_list + dow_list + etf_list))
+                # Exclude nasdaq_list to prevent illiquid penny stocks/biotechs from diluting the swing trading pool
+                broad_market_list = list(set(sp500_list + dow_list + etf_list))
                 
                 watchlist_pool = [t for t in self.tickers if t not in self.blacklist]
                 broad_pool = [t for t in broad_market_list if t not in self.blacklist and t not in watchlist_pool]
                 
-                # Always include the user's watchlist, and fill the rest of the 100 slots with random broad market stocks
-                num_to_sample = max(0, 100 - len(watchlist_pool))
+                # Always include the user's watchlist, and fill the rest of the 40 slots with random broad market stocks
+                num_to_sample = max(0, 40 - len(watchlist_pool))
                 sampled_broad = random.sample(broad_pool, min(len(broad_pool), num_to_sample))
                 sampled_tickers = watchlist_pool + sampled_broad
                 
-                logger.info(f"Dynamically sampled {len(sampled_tickers)} broad-market tickers (including {len(watchlist_pool)} from watchlist) for {risk_tier} screening.")
+                logger.info(f"Dynamically sampled {len(sampled_tickers)} highly-liquid tickers (including {len(watchlist_pool)} from watchlist) for {risk_tier} screening.")
                 
                 prompt = f"""
                 From the following list of {len(sampled_tickers)} stock tickers, select the 15 most promising tickers that fit the '{risk_tier}' risk profile:

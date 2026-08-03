@@ -9,6 +9,7 @@ import asyncio
 import logging
 import yfinance as yf
 from datetime import datetime
+import pytz
 from typing import Dict, Any
 from dotenv import load_dotenv
 from src.llm import LLMClient
@@ -94,6 +95,20 @@ def compile_learnings_feedback(state: Dict[str, Any]) -> str:
         feedback += f"- Failed Trades Avg Scores: Tech: {avg_tech_loss:.1f}/10, Fund: {avg_fund_loss:.1f}/10\n"
         
     return feedback
+
+def is_within_execution_window(windows: list) -> bool:
+    if not windows:
+        return True
+    
+    tz = pytz.timezone('US/Eastern')
+    now = datetime.now(tz)
+    current_time_str = now.strftime("%H:%M")
+    
+    for window in windows:
+        start_str, end_str = window.split('-')
+        if start_str <= current_time_str <= end_str:
+            return True
+    return False
 
 async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
     logger.info("=== Starting Trading Cycle ===")
@@ -475,7 +490,25 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
         
         evaluations = []
         
-        if active_positions_count >= max_positions:
+        # Check execution windows and VIX before scanning
+        execution_windows = config.get("scheduler", {}).get("execution_windows", [])
+        in_window = is_within_execution_window(execution_windows)
+        
+        max_vix = config.get("risk", {}).get("max_vix", 25.0)
+        vix_val = 0.0
+        try:
+            vix_ticker = yf.Ticker("^VIX")
+            vix_hist = vix_ticker.history(period="1d")
+            if not vix_hist.empty:
+                vix_val = vix_hist['Close'].iloc[-1]
+        except Exception as e:
+            logger.warning(f"Could not fetch VIX: {e}")
+            
+        if not in_window:
+            logger.info("Outside configured execution windows. Skipping new candidate scan.")
+        elif vix_val > max_vix:
+            logger.warning(f"VIX is {vix_val:.2f}, above max threshold of {max_vix}. Skipping new candidate scan.")
+        elif active_positions_count >= max_positions:
             logger.info(f"Portfolio is at max position limit ({active_positions_count}/{max_positions}). Skipping scanner.")
         else:
             slots_available = max_positions - active_positions_count
@@ -518,7 +551,8 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                             atr=current_price * 0.02, # Synthetic ATR for tight risk
                             available_tier_capital=available_arb_cap,
                             min_stop_loss_pct=0.03, # Very tight stop loss for arbitrage
-                            max_stop_loss_pct=0.05
+                            max_stop_loss_pct=0.05,
+                            confidence_score=9.0 # Arbitrage implies high confidence
                         )
                         
                         qty = sizing["quantity"]
@@ -786,13 +820,17 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                     min_sl_val = 0.10 if tier == "penny" else None
                     max_sl_val = 0.20 if tier == "penny" else None
                     
+                    scores = [s for s in [news_score, tech_score, fund_score, growth_score] if s is not None]
+                    confidence_score = sum(scores) / len(scores) if scores else 5.0
+                    
                     sizing = risk_agent.calculate_position_size(
                         portfolio_value=net_liq,
                         entry_price=cand["close"],
                         atr=cand["atr"],
                         available_tier_capital=available_tier_cap,
                         min_stop_loss_pct=min_sl_val,
-                        max_stop_loss_pct=max_sl_val
+                        max_stop_loss_pct=max_sl_val,
+                        confidence_score=confidence_score
                     )
     
                     qty = sizing["quantity"]
