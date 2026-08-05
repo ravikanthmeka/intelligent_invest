@@ -149,14 +149,12 @@ async def run_day_trading_cycle(config: Dict[str, Any], dry_run: bool):
             
             has_catalyst = False
             if news_enabled:
-                recent_news = await broker.get_recent_news(symbol)
-                if recent_news:
-                    logger.info(f"[{symbol}] Found {len(recent_news)} recent news items. Analyzing...")
-                    news_analysis = await asyncio.to_thread(news_agent.analyze_live_news, symbol, recent_news)
-                    news_score = news_analysis.get("score", 5.0)
-                    if news_score >= min_sentiment:
-                        has_catalyst = True
-                        logger.info(f"[{symbol}] High catalytic news detected (Score: {news_score}). Bypassing momentum check.")
+                logger.info(f"[{symbol}] Fetching and analyzing news...")
+                news_analysis = await asyncio.to_thread(news_agent.analyze_news, symbol)
+                news_score = news_analysis.get("score", 5.0)
+                if news_score >= min_sentiment:
+                    has_catalyst = True
+                    logger.info(f"[{symbol}] High catalytic news detected (Score: {news_score}). Bypassing momentum check.")
                         
             # Simple momentum check: is price above 5-period 5m MA?
             ma5 = df["Close"].rolling(5).mean().iloc[-1]
