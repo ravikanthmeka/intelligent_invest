@@ -82,7 +82,7 @@ watchlist:
 
 scheduler:
   interval_minutes: 30
-  execution_windows: ["09:30-10:30", "15:00-16:00"]
+  execution_windows: ["09:30-16:00"]
 
 rules:
   min_technical_score: 5.0
