@@ -834,8 +834,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                         atr=cand["atr"],
                         available_tier_capital=available_tier_cap,
                         min_stop_loss_pct=min_sl_val,
-                        max_stop_loss_pct=max_sl_val,
-                        confidence_score=confidence_score
+                        max_stop_loss_pct=max_sl_val
                     )
     
                     qty = sizing["quantity"]
