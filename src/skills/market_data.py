@@ -100,7 +100,7 @@ class FetchRecentNewsSkill(Skill):
         import json
         
         news_results = []
-        av_key = os.environ.get("ALPHAVANTAGE_API_KEY")
+        av_key = os.environ.get("ALPHAVANTAGE_API_KEY") or os.environ.get("ALPHA_VANTAGE_API_KEY")
         
         # 1. Try Alpha Vantage First
         if av_key and not self.__class__._av_rate_limited:

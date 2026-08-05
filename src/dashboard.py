@@ -475,7 +475,7 @@ def compile_learnings_feedback(state: Dict[str, Any]) -> str:
     return feedback
 
 # Layout: Main Body
-tab_options, tab_day, tab1, tab2, tab_candidates, tab_prompts, tab_manual, tab_considerations, tab3, tab4 = st.tabs(["📈 Options Trading", "⚡ Day Trading", "📊 Active Positions", "📜 Trade Log & AI Learnings", "🔍 Candidate Analysis Log", "🛠️ LLM Agent Prompts", "🎯 On-Demand Ticker Target", "🤔 Considerations Log", "📁 System Logs", "⚙️ Settings & Risk Rules"])
+tab_options, tab_day, tab1, tab2, tab_candidates, tab_prompts, tab_manual, tab_news_analysis, tab_considerations, tab3, tab4 = st.tabs(["📈 Options Trading", "⚡ Day Trading", "📊 Active Positions", "📜 Trade Log & AI Learnings", "🔍 Candidate Analysis Log", "🛠️ LLM Agent Prompts", "🎯 On-Demand Ticker Target", "📰 News Analysis", "🤔 Considerations Log", "📁 System Logs", "⚙️ Settings & Risk Rules"])
 
 with tab_options:
     hedge_status = state.get("hedge_status", {})
@@ -587,6 +587,30 @@ with tab_considerations:
                 st.error(f"Error parsing considerations data: {e}")
     else:
         st.info("Considerations log is empty.")
+
+with tab_news_analysis:
+    st.write("### 📰 Daily News Analysis Tracker")
+    st.markdown("Chronological log of news sentiment and key events analyzed by the NewsAgent. Entries are automatically pruned after 24 hours.")
+    
+    import json
+    import os
+    if os.path.exists("data/news_analysis.json"):
+        with open("data/news_analysis.json", "r") as f:
+            try:
+                news_data = json.load(f)
+                if news_data:
+                    import pandas as pd
+                    df_news = pd.DataFrame(news_data)
+                    # Optionally convert key_events list to string for better display
+                    if "key_events" in df_news.columns:
+                        df_news["key_events"] = df_news["key_events"].apply(lambda x: ", ".join(x) if isinstance(x, list) else x)
+                    st.dataframe(df_news, use_container_width=True)
+                else:
+                    st.info("No news analysis tracked yet today.")
+            except Exception as e:
+                st.error(f"Error parsing news analysis data: {e}")
+    else:
+        st.info("News analysis log is empty.")
 
 with tab1:
     st.write("### Portfolio Breakdown")
