@@ -16,7 +16,7 @@ from src.llm import LLMClient
 from src.broker import BrokerAgent
 from src.agents.specialized import MarketScannerAgent, TechnicalAgent, NewsAgent
 from src.notifications import NotificationClient
-
+from src.considerations import ConsiderationsTracker
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",

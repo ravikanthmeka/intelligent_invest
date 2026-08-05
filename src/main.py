@@ -7,6 +7,7 @@ import yaml
 import json
 import asyncio
 import logging
+from src.considerations import ConsiderationsTracker
 import yfinance as yf
 from datetime import datetime
 import pytz
@@ -813,6 +814,10 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                     }
                     evaluations.append(eval_entry)
                     
+                    scores = [s for s in [news_score, tech_score, fund_score, growth_score] if s is not None]
+                    confidence_score = sum(scores) / len(scores) if scores else 5.0
+                    ConsiderationsTracker.log(symbol, f"Swing ({tier.capitalize()})", confidence_score, status)
+                    
                     if status != "Passed":
                         continue
     
@@ -1047,6 +1052,8 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                                             available_opt_cap -= (qty_opts * opt_price * 100)
                         
                         evaluations.append(eval_entry)
+                        opt_score = eval_entry.get("analysis", {}).get("opt_score", 5.0)
+                        ConsiderationsTracker.log(symbol, "Options", opt_score, eval_entry["status"])
 
             # Save state after scans and executions
             state["active_trades"] = active_trades

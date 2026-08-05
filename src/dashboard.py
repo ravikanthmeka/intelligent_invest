@@ -475,7 +475,7 @@ def compile_learnings_feedback(state: Dict[str, Any]) -> str:
     return feedback
 
 # Layout: Main Body
-tab_options, tab_day, tab1, tab2, tab_candidates, tab_prompts, tab_manual, tab3, tab4 = st.tabs(["📈 Options Trading", "⚡ Day Trading", "📊 Active Positions", "📜 Trade Log & AI Learnings", "🔍 Candidate Analysis Log", "🛠️ LLM Agent Prompts", "🎯 On-Demand Ticker Target", "📁 System Logs", "⚙️ Settings & Risk Rules"])
+tab_options, tab_day, tab1, tab2, tab_candidates, tab_prompts, tab_manual, tab_considerations, tab3, tab4 = st.tabs(["📈 Options Trading", "⚡ Day Trading", "📊 Active Positions", "📜 Trade Log & AI Learnings", "🔍 Candidate Analysis Log", "🛠️ LLM Agent Prompts", "🎯 On-Demand Ticker Target", "🤔 Considerations Log", "📁 System Logs", "⚙️ Settings & Risk Rules"])
 
 with tab_options:
     hedge_status = state.get("hedge_status", {})
@@ -565,6 +565,28 @@ with tab_day:
             st.warning("Day Trade Liquidation executed.")
     else:
         st.info("No active day trades currently.")
+
+with tab_considerations:
+    st.write("### 🤔 Evaluated Trades (Considerations Log)")
+    st.markdown("This tab shows all evaluated symbols across options, day trading, and swing trading that were considered. It tracks their scores and reasons why they were rejected (or if they passed).")
+    
+    import json
+    import os
+    if os.path.exists("data/considerations.json"):
+        with open("data/considerations.json", "r") as f:
+            try:
+                cons_data = json.load(f)
+                cons_list = list(cons_data.values())
+                cons_list.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+                if cons_list:
+                    import pandas as pd
+                    st.dataframe(pd.DataFrame(cons_list), use_container_width=True)
+                else:
+                    st.info("No considerations tracked yet.")
+            except Exception as e:
+                st.error(f"Error parsing considerations data: {e}")
+    else:
+        st.info("Considerations log is empty.")
 
 with tab1:
     st.write("### Portfolio Breakdown")
