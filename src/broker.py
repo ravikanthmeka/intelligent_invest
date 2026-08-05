@@ -276,3 +276,43 @@ class BrokerAgent:
         except Exception as e:
             logger.error(f"Error executing sell for {symbol}: {e}")
             return False
+
+    async def get_historical_data(self, symbol: str, duration: str = "1 D", bar_size: str = "5 mins"):
+        """
+        Fetches historical data using IBKR API.
+        Returns a pandas DataFrame.
+        """
+        import pandas as pd
+        if self.dry_run:
+            import yfinance as yf
+            df = yf.Ticker(symbol).history(period="1d", interval="5m")
+            return df
+
+        try:
+            contract = Stock(symbol, "SMART", "USD")
+            await self.ib.qualifyContractsAsync(contract)
+            bars = await self.ib.reqHistoricalDataAsync(
+                contract,
+                endDateTime='',
+                durationStr=duration,
+                barSizeSetting=bar_size,
+                whatToShow='TRADES',
+                useRTH=True,
+                formatDate=1
+            )
+            if not bars:
+                return pd.DataFrame()
+                
+            df = pd.DataFrame([{
+                'Date': b.date,
+                'Open': b.open,
+                'High': b.high,
+                'Low': b.low,
+                'Close': b.close,
+                'Volume': b.volume
+            } for b in bars])
+            df.set_index('Date', inplace=True)
+            return df
+        except Exception as e:
+            logger.error(f"Error fetching historical data for {symbol}: {e}")
+            return pd.DataFrame()

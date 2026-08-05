@@ -130,15 +130,15 @@ async def run_day_trading_cycle(config: Dict[str, Any], dry_run: bool):
         
     tech_agent = TechnicalAgent(llm)
     
-    for symbol in watchlist:
+    async def evaluate_symbol(symbol: str):
         if symbol in active_trades:
-            continue # Already in position
+            return
             
         try:
-            # Fetch 5m intraday data
-            df = yf.Ticker(symbol).history(period="1d", interval="5m")
+            # Fetch 5m intraday data using live broker API
+            df = await broker.get_historical_data(symbol, duration="1 D", bar_size="5 mins")
             if df.empty or len(df) < 5:
-                continue
+                return
                 
             close = df["Close"].iloc[-1]
             # Simple momentum check: is price above 5-period 5m MA?
@@ -146,7 +146,9 @@ async def run_day_trading_cycle(config: Dict[str, Any], dry_run: bool):
             
             if close > ma5:
                 logger.info(f"[{symbol}] Momentum detected (Close: {close:.2f} > MA5: {ma5:.2f}). Triggering Technical Agent.")
-                tech_analysis = tech_agent.analyze(symbol)
+                # We need data dictionary for tech_agent.analyze
+                data = {"history": df}
+                tech_analysis = await asyncio.to_thread(tech_agent.analyze, symbol, data)
                 
                 score = tech_analysis.get("score", 5.0)
                 if score >= 7.0:
@@ -181,6 +183,9 @@ async def run_day_trading_cycle(config: Dict[str, Any], dry_run: bool):
                                 logger.info(f"Insufficient cash for {symbol} day trade.")
         except Exception as e:
             logger.error(f"Error evaluating {symbol} for day trading: {e}")
+
+    tasks = [evaluate_symbol(symbol) for symbol in watchlist]
+    await asyncio.gather(*tasks)
 
     await broker.disconnect()
 
