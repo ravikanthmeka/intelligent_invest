@@ -13,6 +13,7 @@ import subprocess
 import platform
 from datetime import datetime
 from typing import Dict, Any
+from src.token_tracker import TokenTracker
 
 
 CONFIG_FILE = "config.yaml"
@@ -475,7 +476,7 @@ def compile_learnings_feedback(state: Dict[str, Any]) -> str:
     return feedback
 
 # Layout: Main Body
-tab_options, tab_day, tab1, tab2, tab_candidates, tab_prompts, tab_manual, tab_news_analysis, tab_considerations, tab3, tab4 = st.tabs(["📈 Options Trading", "⚡ Day Trading", "📊 Active Positions", "📜 Trade Log & AI Learnings", "🔍 Candidate Analysis Log", "🛠️ LLM Agent Prompts", "🎯 On-Demand Ticker Target", "📰 News Analysis", "🤔 Considerations Log", "📁 System Logs", "⚙️ Settings & Risk Rules"])
+tab_options, tab_day, tab1, tab2, tab_candidates, tab_prompts, tab_manual, tab_news_analysis, tab_considerations, tab_tokens, tab3, tab4 = st.tabs(["📈 Options Trading", "⚡ Day Trading", "📊 Active Positions", "📜 Trade Log & AI Learnings", "🔍 Candidate Analysis Log", "🛠️ LLM Agent Prompts", "🎯 On-Demand Ticker Target", "📰 News Analysis", "🤔 Considerations Log", "📊 Token Usage", "📁 System Logs", "⚙️ Settings & Risk Rules"])
 
 with tab_options:
     hedge_status = state.get("hedge_status", {})
@@ -1203,6 +1204,33 @@ with tab_manual:
                                     st.error("Broker returned None for Order ID. Purchase failed.")
                         except Exception as e:
                             st.error(f"Order placement failed: {e}")
+
+with tab_tokens:
+    st.write("### 📊 Token Usage (Today)")
+    st.markdown("Monitor API token consumption for OpenAI and Bedrock to track operating costs.")
+    
+    try:
+        summary = TokenTracker.get_today_summary()
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Prompt Tokens", f"{summary['prompt_tokens']:,}")
+        col2.metric("Completion Tokens", f"{summary['completion_tokens']:,}")
+        col3.metric("Total Tokens", f"{summary['total_tokens']:,}")
+        
+        st.write("#### Usage by Model")
+        for m, t in summary['by_model'].items():
+            st.write(f"- **{m}**: {t:,} tokens")
+            
+        data = TokenTracker.load()
+        if data:
+            import pandas as pd
+            df = pd.DataFrame(data)
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            st.write("#### Recent LLM Invocations")
+            st.dataframe(df.sort_values(by='timestamp', ascending=False).head(50), use_container_width=True)
+        else:
+            st.info("No token usage recorded yet.")
+    except Exception as e:
+        st.error(f"Error loading token tracker: {e}")
 
 with tab3:
     st.write("### Latest Agent Execution Logs")

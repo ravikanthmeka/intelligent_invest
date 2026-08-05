@@ -3,6 +3,7 @@ import json
 import boto3
 from openai import OpenAI
 from typing import Dict, Any, Optional
+from src.token_tracker import TokenTracker
 
 class LLMClient:
     def __init__(self, provider: str = None, model: str = None):
@@ -74,6 +75,15 @@ class LLMClient:
             temperature=temperature,
             max_tokens=max_tokens
         )
+        
+        try:
+            if response.usage:
+                prompt_tokens = response.usage.prompt_tokens
+                comp_tokens = response.usage.completion_tokens
+                TokenTracker.log("openai", self.model or "gpt-4o", prompt_tokens, comp_tokens)
+        except Exception:
+            pass
+            
         return response.choices[0].message.content.strip()
 
     def _call_bedrock(self, prompt: str, system_prompt: Optional[str], temperature: float, max_tokens: int) -> str:
@@ -107,4 +117,13 @@ class LLMClient:
             kwargs["system"] = system
 
         response = self.bedrock_client.converse(**kwargs)
+        
+        try:
+            usage = response.get("usage", {})
+            prompt_tokens = usage.get("inputTokens", 0)
+            comp_tokens = usage.get("outputTokens", 0)
+            TokenTracker.log("bedrock", model_id, prompt_tokens, comp_tokens)
+        except Exception:
+            pass
+            
         return response["output"]["message"]["content"][0]["text"].strip()
