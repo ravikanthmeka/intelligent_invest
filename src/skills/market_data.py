@@ -83,6 +83,10 @@ class FetchEarningsCalendarSkill(Skill):
             return True, None
 
 class FetchRecentNewsSkill(Skill):
+    _cached_av_news = None
+    _av_last_fetch_time = 0
+    _av_rate_limited = False
+
     def __init__(self):
         super().__init__(
             name="FetchRecentNews",
@@ -90,7 +94,60 @@ class FetchRecentNewsSkill(Skill):
         )
 
     def execute(self, symbol: str) -> List[Dict[str, Any]]:
+        import os
+        import time
+        import urllib.request
+        import json
+        
         news_results = []
+        av_key = os.environ.get("ALPHAVANTAGE_API_KEY")
+        
+        # 1. Try Alpha Vantage First
+        if av_key and not self.__class__._av_rate_limited:
+            current_time = time.time()
+            # Refresh global cache if older than 15 minutes (900 seconds)
+            if self.__class__._cached_av_news is None or (current_time - self.__class__._av_last_fetch_time > 900):
+                try:
+                    url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&limit=200&apikey={av_key}"
+                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                    res = urllib.request.urlopen(req, timeout=10).read().decode('utf-8')
+                    data = json.loads(res)
+                    
+                    if "Information" in data and "rate limit" in data["Information"].lower():
+                        logger.warning("Alpha Vantage API rate limit hit. Falling back to yfinance.")
+                        self.__class__._av_rate_limited = True
+                    elif "Note" in data and "call frequency" in data["Note"].lower():
+                        logger.warning("Alpha Vantage API rate limit hit (Note). Falling back to yfinance.")
+                        self.__class__._av_rate_limited = True
+                    elif "feed" in data:
+                        self.__class__._cached_av_news = data["feed"]
+                        self.__class__._av_last_fetch_time = current_time
+                        # Optional: reset rate limited flag if it succeeds
+                        self.__class__._av_rate_limited = False
+                    else:
+                        logger.warning(f"Alpha Vantage API returned unexpected response. Keys: {list(data.keys())}")
+                except Exception as e:
+                    logger.error(f"Error fetching Alpha Vantage news: {e}")
+            
+            # Filter from cache
+            if self.__class__._cached_av_news:
+                for article in self.__class__._cached_av_news:
+                    # Check if symbol is in ticker_sentiment
+                    tickers_mentioned = [t.get("ticker", "") for t in article.get("ticker_sentiment", [])]
+                    if symbol in tickers_mentioned or symbol in article.get("title", ""):
+                        news_results.append({
+                            "title": article.get("title"),
+                            "publisher": article.get("source"),
+                            "link": article.get("url")
+                        })
+                        if len(news_results) >= 5:
+                            break
+
+        # If AV gave us news, return it and skip yfinance fallback
+        if news_results:
+            return news_results
+
+        # 2. Fallback to yfinance (existing logic)
         try:
             ticker_obj = yf.Ticker(symbol)
             news = ticker_obj.news
