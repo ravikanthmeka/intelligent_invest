@@ -316,3 +316,39 @@ class BrokerAgent:
         except Exception as e:
             logger.error(f"Error fetching historical data for {symbol}: {e}")
             return pd.DataFrame()
+
+    async def get_recent_news(self, symbol: str) -> List[Dict[str, str]]:
+        """
+        Fetches recent news articles for a symbol using IBKR Broad Tape / Benzinga News API.
+        """
+        if self.dry_run:
+            return [{"headline": f"Huge momentum building for {symbol} on unconfirmed rumors.", "time": "Just now"}]
+            
+        try:
+            contract = Stock(symbol, "SMART", "USD")
+            await self.ib.qualifyContractsAsync(contract)
+            
+            # Using reqHistoricalNews to get recent articles
+            # providerCodes: 'BRF' (Broadtape), 'BZ' (Benzinga)
+            news_articles = await self.ib.reqHistoricalNewsAsync(
+                contract.conId,
+                providerCodes="BRF+BZ",
+                startDateTime="",
+                endDateTime="",
+                totalResults=5
+            )
+            
+            results = []
+            if news_articles:
+                for article in news_articles:
+                    results.append({
+                        "headline": article.headline,
+                        "time": str(article.time),
+                        "article_id": article.articleId,
+                        "provider": article.providerCode
+                    })
+                
+            return results
+        except Exception as e:
+            logger.error(f"Error fetching news for {symbol}: {e}")
+            return []

@@ -251,6 +251,10 @@ class NewsAgent(Agent):
         news_items = fetch_news_skill.execute(symbol)
         return news_sentiment_skill.execute(symbol, news_items, learnings_feedback=learnings_feedback)
 
+    def analyze_live_news(self, symbol: str, news_items: list, learnings_feedback: str = "") -> Dict[str, Any]:
+        news_sentiment_skill = self.get_skill("NewsSentiment")
+        return news_sentiment_skill.execute(symbol, news_items, learnings_feedback=learnings_feedback)
+
 class RiskAgent(Agent):
     def __init__(self, max_positions: int = 5, max_cap_pct: float = 0.20, risk_pct: float = 0.01, min_stop_loss_pct: float = 0.05, max_stop_loss_pct: float = 0.07, trail_trigger_pct: float = 0.03, size_by_capital: bool = False):
         super().__init__(name="RiskAgent", role="Calculate position sizing, evaluate risk parameters and active position status.")

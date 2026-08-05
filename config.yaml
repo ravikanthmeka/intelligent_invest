@@ -39,6 +39,9 @@ day_trading:
   max_stop_loss_pct: 0.02
   trail_trigger_pct: 0.015
   eod_liquidation_time: "15:45"
+  news_feed:
+    enabled: true
+    min_sentiment_score: 8.5
   
 watchlist:
   - "AAPL"

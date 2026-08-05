@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.llm import LLMClient
 from src.broker import BrokerAgent
-from src.agents.specialized import MarketScannerAgent, TechnicalAgent
+from src.agents.specialized import MarketScannerAgent, TechnicalAgent, NewsAgent
 from src.notifications import NotificationClient
 
 logging.basicConfig(
@@ -129,6 +129,7 @@ async def run_day_trading_cycle(config: Dict[str, Any], dry_run: bool):
         return
         
     tech_agent = TechnicalAgent(llm)
+    news_agent = NewsAgent(llm)
     
     async def evaluate_symbol(symbol: str):
         if symbol in active_trades:
@@ -141,17 +142,37 @@ async def run_day_trading_cycle(config: Dict[str, Any], dry_run: bool):
                 return
                 
             close = df["Close"].iloc[-1]
+            
+            # --- News Check ---
+            news_enabled = day_trading_cfg.get("news_feed", {}).get("enabled", False)
+            min_sentiment = day_trading_cfg.get("news_feed", {}).get("min_sentiment_score", 8.5)
+            
+            has_catalyst = False
+            if news_enabled:
+                recent_news = await broker.get_recent_news(symbol)
+                if recent_news:
+                    logger.info(f"[{symbol}] Found {len(recent_news)} recent news items. Analyzing...")
+                    news_analysis = await asyncio.to_thread(news_agent.analyze_live_news, symbol, recent_news)
+                    news_score = news_analysis.get("score", 5.0)
+                    if news_score >= min_sentiment:
+                        has_catalyst = True
+                        logger.info(f"[{symbol}] High catalytic news detected (Score: {news_score}). Bypassing momentum check.")
+                        
             # Simple momentum check: is price above 5-period 5m MA?
             ma5 = df["Close"].rolling(5).mean().iloc[-1]
             
-            if close > ma5:
-                logger.info(f"[{symbol}] Momentum detected (Close: {close:.2f} > MA5: {ma5:.2f}). Triggering Technical Agent.")
+            if has_catalyst or close > ma5:
+                if not has_catalyst:
+                    logger.info(f"[{symbol}] Momentum detected (Close: {close:.2f} > MA5: {ma5:.2f}). Triggering Technical Agent.")
+                    
                 # We need data dictionary for tech_agent.analyze
                 data = {"history": df}
                 tech_analysis = await asyncio.to_thread(tech_agent.analyze, symbol, data)
                 
                 score = tech_analysis.get("score", 5.0)
-                if score >= 7.0:
+                required_score = 6.0 if has_catalyst else 7.0
+                
+                if score >= required_score:
                     # Execute Trade
                     risk_pct = day_trading_cfg.get("risk_per_trade_pct", 0.01)
                     risk_amount = available_day_cap * risk_pct
