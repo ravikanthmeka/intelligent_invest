@@ -203,7 +203,13 @@ async def run_day_trading_cycle(config: Dict[str, Any], dry_run: bool):
         except Exception as e:
             logger.error(f"Error evaluating {symbol} for day trading: {e}")
 
-    tasks = [evaluate_symbol(symbol) for symbol in watchlist]
+    sem = asyncio.Semaphore(5)
+    
+    async def sem_evaluate_symbol(symbol: str):
+        async with sem:
+            await evaluate_symbol(symbol)
+
+    tasks = [sem_evaluate_symbol(symbol) for symbol in watchlist]
     await asyncio.gather(*tasks)
 
     await broker.disconnect()
