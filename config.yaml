@@ -5,11 +5,12 @@ trading:
   dynamic_market_scanning: true  # If true, samples S&P 500 constituents combined with watchlist for dynamic screening.
 
 allocation:
-  high_risk_pct: 0.25
+  day_trading_pct: 0.20
+  high_risk_pct: 0.20
+  moderate_risk_pct: 0.20
   low_risk_pct: 0.20
-  moderate_risk_pct: 0.30
-  penny_risk_pct: 0.05
   options_pct: 0.20
+  penny_risk_pct: 0.00
 
 llm:
   provider: "openai"  # Options: "bedrock" or "openai"
@@ -31,6 +32,14 @@ risk:
   max_vix: 25.0
   dynamic_sizing: true
 
+day_trading:
+  enabled: true
+  risk_per_trade_pct: 0.01
+  min_stop_loss_pct: 0.01
+  max_stop_loss_pct: 0.02
+  trail_trigger_pct: 0.015
+  eod_liquidation_time: "15:45"
+  
 watchlist:
   - "AAPL"
   - "MSFT"

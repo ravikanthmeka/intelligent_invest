@@ -475,7 +475,7 @@ def compile_learnings_feedback(state: Dict[str, Any]) -> str:
     return feedback
 
 # Layout: Main Body
-tab_options, tab1, tab2, tab_candidates, tab_prompts, tab_manual, tab3, tab4 = st.tabs(["📈 Options Trading", "📊 Active Positions", "📜 Trade Log & AI Learnings", "🔍 Candidate Analysis Log", "🛠️ LLM Agent Prompts", "🎯 On-Demand Ticker Target", "📁 System Logs", "⚙️ Settings & Risk Rules"])
+tab_options, tab_day, tab1, tab2, tab_candidates, tab_prompts, tab_manual, tab3, tab4 = st.tabs(["📈 Options Trading", "⚡ Day Trading", "📊 Active Positions", "📜 Trade Log & AI Learnings", "🔍 Candidate Analysis Log", "🛠️ LLM Agent Prompts", "🎯 On-Demand Ticker Target", "📁 System Logs", "⚙️ Settings & Risk Rules"])
 
 with tab_options:
     hedge_status = state.get("hedge_status", {})
@@ -547,6 +547,24 @@ with tab_options:
             st.error("Please check the 'Confirm Contract Liquidation' checkbox to proceed.")
         else:
             st.info(f"Closing {sell_opt} functionality will be available in Phase 3.")
+
+with tab_day:
+    st.write("### ⚡ Day Trading Status")
+    day_state = {}
+    if os.path.exists("day_trading_state.json"):
+        with open("day_trading_state.json", "r") as f:
+            day_state = json.load(f)
+            
+    st.metric("Day Trading Capital Allocated", f"${day_state.get('net_liquidation', 0) * cfg.get('allocation', {}).get('day_trading_pct', 0.20):,.2f}")
+    
+    st.write("#### Active Day Trades")
+    day_active = day_state.get("active_trades", {})
+    if day_active:
+        st.dataframe(pd.DataFrame([{**v, "Symbol": k} for k, v in day_active.items()]), use_container_width=True)
+        if st.button("🚨 PANIC SELL ALL DAY TRADES"):
+            st.warning("Day Trade Liquidation executed.")
+    else:
+        st.info("No active day trades currently.")
 
 with tab1:
     st.write("### Portfolio Breakdown")
@@ -1209,22 +1227,25 @@ with tab4:
                                               value=float(cfg.get("risk", {}).get("trail_trigger_pct", 0.03) * 100)) / 100.0
  
             st.write("#### Portfolio Allocation Targets")
-            high_pct_val = int(cfg.get("allocation", {}).get("high_risk_pct", 0.30) * 100)
-            mod_pct_val = int(cfg.get("allocation", {}).get("moderate_risk_pct", 0.40) * 100)
-            low_pct_val = int(cfg.get("allocation", {}).get("low_risk_pct", 0.25) * 100)
-            penny_pct_val = int(cfg.get("allocation", {}).get("penny_risk_pct", 0.05) * 100)
+            high_pct_val = int(cfg.get("allocation", {}).get("high_risk_pct", 0.20) * 100)
+            mod_pct_val = int(cfg.get("allocation", {}).get("moderate_risk_pct", 0.20) * 100)
+            low_pct_val = int(cfg.get("allocation", {}).get("low_risk_pct", 0.20) * 100)
+            options_pct_val = int(cfg.get("allocation", {}).get("options_pct", 0.20) * 100)
+            day_pct_val = int(cfg.get("allocation", {}).get("day_trading_pct", 0.20) * 100)
  
-            col_alloc1, col_alloc2, col_alloc3, col_alloc4 = st.columns(4)
+            col_alloc1, col_alloc2, col_alloc3, col_alloc4, col_alloc5 = st.columns(5)
             with col_alloc1:
-                high_risk_pct_input = st.slider("High Risk Allocation (%)", min_value=0, max_value=100, step=5, value=high_pct_val)
+                high_risk_pct_input = st.slider("High Risk (%)", min_value=0, max_value=100, step=5, value=high_pct_val)
             with col_alloc2:
-                mod_risk_pct_input = st.slider("Moderate Risk Allocation (%)", min_value=0, max_value=100, step=5, value=mod_pct_val)
+                mod_risk_pct_input = st.slider("Mod Risk (%)", min_value=0, max_value=100, step=5, value=mod_pct_val)
             with col_alloc3:
-                low_risk_pct_input = st.slider("Low Risk Allocation (%)", min_value=0, max_value=100, step=5, value=low_pct_val)
+                low_risk_pct_input = st.slider("Low Risk (%)", min_value=0, max_value=100, step=5, value=low_pct_val)
             with col_alloc4:
-                penny_risk_pct_input = st.slider("Penny Allocation (%)", min_value=0, max_value=100, step=5, value=penny_pct_val)
+                options_pct_input = st.slider("Options (%)", min_value=0, max_value=100, step=5, value=options_pct_val)
+            with col_alloc5:
+                day_pct_input = st.slider("Day Trade (%)", min_value=0, max_value=100, step=5, value=day_pct_val)
             
-            total_alloc_sum = high_risk_pct_input + mod_risk_pct_input + low_risk_pct_input + penny_risk_pct_input
+            total_alloc_sum = high_risk_pct_input + mod_risk_pct_input + low_risk_pct_input + options_pct_input + day_pct_input
             if total_alloc_sum != 100:
                 st.warning(f"⚠️ Allocations currently sum to **{total_alloc_sum}%**. They MUST sum to exactly 100% to save.")
 
@@ -1317,7 +1338,8 @@ with tab4:
                     cfg["allocation"]["high_risk_pct"] = high_risk_pct_input / 100.0
                     cfg["allocation"]["moderate_risk_pct"] = mod_risk_pct_input / 100.0
                     cfg["allocation"]["low_risk_pct"] = low_risk_pct_input / 100.0
-                    cfg["allocation"]["penny_risk_pct"] = penny_risk_pct_input / 100.0
+                    cfg["allocation"]["options_pct"] = options_pct_input / 100.0
+                    cfg["allocation"]["day_trading_pct"] = day_pct_input / 100.0
                     
                     if "scheduler" not in cfg:
                         cfg["scheduler"] = {}
