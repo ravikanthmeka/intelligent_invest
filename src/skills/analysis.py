@@ -189,13 +189,14 @@ class NewsSentimentSkill(Skill):
             default_template = """Analyze the recent headlines for stock '{symbol}':
             {news_summary}
             {learnings_str}
-            Identify any negative/positive binary events (lawsuits, product recalls, FDA approvals, executive departures).
+            Identify any negative/positive binary events (lawsuits, product recalls, FDA approvals, executive departures) and summarize the news.
             Provide a news sentiment verdict. Respond in valid JSON structure:
             {{
                 "verdict": "POSITIVE" | "NEUTRAL" | "NEGATIVE",
                 "binary_event_detected": boolean,
                 "sentiment_score": float (0.0 to 10.0),
-                "rationale": "Brief summary (max 1 sentence)."
+                "summary": "Brief summary of the news (1-2 sentences).",
+                "key_events": ["list", "of", "key", "events", "detected"]
             }}
             Do not add any markup or markdown wraps besides the raw JSON."""
             

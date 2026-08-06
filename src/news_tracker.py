@@ -45,7 +45,7 @@ class NewsTracker:
             "timestamp": now.isoformat(),
             "symbol": symbol,
             "sentiment_score": analysis.get("sentiment_score", 0),
-            "sentiment_label": analysis.get("sentiment_label", "Neutral"),
+            "sentiment_label": analysis.get("verdict", "Neutral"),
             "summary": analysis.get("summary", "No summary available"),
             "key_events": analysis.get("key_events", [])
         }
