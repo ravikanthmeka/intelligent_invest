@@ -165,8 +165,24 @@ async def run_day_trading_cycle(config: Dict[str, Any], dry_run: bool):
                 if not has_catalyst:
                     logger.info(f"[{symbol}] Momentum detected (Close: {close:.2f} > MA5: {ma5:.2f}). Triggering Technical Agent.")
                     
-                # We need data dictionary for tech_agent.analyze
-                data = {"history": df}
+                # Calculate indicators to populate the data dict properly
+                from src.skills.market_data import CalculateIndicatorsSkill
+                calc_skill = CalculateIndicatorsSkill()
+                df_calc = calc_skill.execute(df)
+                last_row = df_calc.iloc[-1]
+                avg_vol = df_calc['Volume'].rolling(20).mean().iloc[-1] if len(df_calc) >= 20 else last_row['Volume']
+                
+                data = {
+                    "history": df_calc,
+                    "close": close,
+                    "rsi": last_row.get("RSI", 50.0),
+                    "sma_50": last_row.get("SMA_50", close),
+                    "sma_200": last_row.get("SMA_200", close),
+                    "atr": last_row.get("ATR", 0.0),
+                    "volume": last_row.get("Volume", 0),
+                    "avg_volume": avg_vol,
+                    "volume_spike": last_row.get("Volume", 0) > (avg_vol * 1.2)
+                }
                 tech_analysis = await asyncio.to_thread(tech_agent.analyze, symbol, data, "", "day")
                 
                 score = tech_analysis.get("score", 5.0)
