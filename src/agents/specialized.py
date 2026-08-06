@@ -219,7 +219,23 @@ class TechnicalAgent(Agent):
         self.llm = llm
         self.register_skill(TechnicalAnalysisSkill(llm))
 
-    def analyze(self, symbol: str, data: Dict[str, Any], learnings_feedback: str = "") -> Dict[str, Any]:
+    def analyze(self, symbol: str, data: Dict[str, Any], learnings_feedback: str = "", timeframe: str = "swing") -> Dict[str, Any]:
+        if timeframe == "day":
+            try:
+                from src.skills.market_data import FetchIntradayRelativeStrengthSkill, FetchGapAndVolumeSkill, CalculateVolumeProfileSkill
+                
+                rs_data = FetchIntradayRelativeStrengthSkill().execute(symbol)
+                data['intraday_rs'] = rs_data.get('relative_strength', 'N/A')
+                
+                gap_data = FetchGapAndVolumeSkill().execute(symbol)
+                data['gap_pct'] = gap_data.get('gap_pct', 'N/A')
+                
+                poc_data = CalculateVolumeProfileSkill().execute(symbol)
+                data['poc_price'] = poc_data.get('poc_price', 'N/A')
+            except Exception as e:
+                import logging
+                logging.getLogger("TechnicalAgent").error(f"Failed fetching intraday data for {symbol}: {e}")
+                
         tech_skill = self.get_skill("TechnicalAnalysis")
         return tech_skill.execute(symbol, data, learnings_feedback=learnings_feedback)
 
@@ -229,9 +245,31 @@ class FundamentalAgent(Agent):
         self.llm = llm
         self.register_skill(FundamentalAnalysisSkill(llm))
 
-    def analyze(self, symbol: str, learnings_feedback: str = "") -> Dict[str, Any]:
+    def analyze(self, symbol: str, learnings_feedback: str = "", include_context: bool = True) -> Dict[str, Any]:
         fund_skill = self.get_skill("FundamentalAnalysis")
-        return fund_skill.execute(symbol, learnings_feedback=learnings_feedback)
+        result = fund_skill.execute(symbol, learnings_feedback=learnings_feedback)
+        
+        if include_context:
+            try:
+                from src.skills.market_data import FetchSectorRotationSkill, FetchInsiderTradingSkill
+                from src.skills.analysis import SwingTradingContextSkill
+                
+                sector_data = FetchSectorRotationSkill().execute()
+                insider_data = FetchInsiderTradingSkill().execute(symbol)
+                
+                context_skill = SwingTradingContextSkill(self.llm)
+                context_result = context_skill.execute(symbol, sector_data, insider_data)
+                
+                # Boost fundamental score if context is good
+                context_score = context_result.get("context_score", 5.0)
+                if context_score > 7.0:
+                    result["score"] = min(10.0, result.get("score", 5.0) + 1.0)
+                    result["rationale"] += f" (Boosted by Strong Sector/Insider Context: {context_result.get('rationale', '')})"
+            except Exception as e:
+                import logging
+                logging.getLogger("FundamentalAgent").error(f"Failed fetching context data for {symbol}: {e}")
+                
+        return result
 
 class NewsAgent(Agent):
     def __init__(self, llm: LLMClient):

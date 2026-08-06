@@ -167,7 +167,7 @@ async def run_day_trading_cycle(config: Dict[str, Any], dry_run: bool):
                     
                 # We need data dictionary for tech_agent.analyze
                 data = {"history": df}
-                tech_analysis = await asyncio.to_thread(tech_agent.analyze, symbol, data)
+                tech_analysis = await asyncio.to_thread(tech_agent.analyze, symbol, data, "", "day")
                 
                 score = tech_analysis.get("score", 5.0)
                 required_score = min_tech_score - 1.0 if has_catalyst else min_tech_score

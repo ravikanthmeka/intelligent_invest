@@ -1,6 +1,7 @@
 import logging
 import yfinance as yf
 import pandas as pd
+import numpy as np
 from datetime import datetime
 from typing import Dict, Any, Tuple, Optional, List
 from src.skills.base import Skill
@@ -643,3 +644,212 @@ class FetchEarningsCatalystDataSkill(Skill):
         except Exception as e:
             logger.error(f"Error fetching earnings catalyst data for {symbol}: {e}")
             return {}
+
+
+class FetchIntradayRelativeStrengthSkill(Skill):
+    def __init__(self):
+        super().__init__(name="FetchIntradayRelativeStrength", description="Compares a stock's intraday % return vs SPY.")
+        
+    def execute(self, symbol: str) -> Dict[str, Any]:
+        try:
+            stock = yf.Ticker(symbol)
+            spy = yf.Ticker("SPY")
+            
+            # Fetch today's data (1m or 5m intervals)
+            stock_data = stock.history(period="1d", interval="5m")
+            spy_data = spy.history(period="1d", interval="5m")
+            
+            if stock_data.empty or spy_data.empty:
+                return {"error": "Insufficient intraday data"}
+                
+            stock_open = stock_data['Open'].iloc[0]
+            stock_last = stock_data['Close'].iloc[-1]
+            stock_pct = ((stock_last - stock_open) / stock_open) * 100
+            
+            spy_open = spy_data['Open'].iloc[0]
+            spy_last = spy_data['Close'].iloc[-1]
+            spy_pct = ((spy_last - spy_open) / spy_open) * 100
+            
+            rs = stock_pct - spy_pct
+            
+            return {
+                "symbol_intraday_return": round(stock_pct, 2),
+                "spy_intraday_return": round(spy_pct, 2),
+                "relative_strength": round(rs, 2)
+            }
+        except Exception as e:
+            return {"error": f"Failed to fetch RS: {e}"}
+
+class FetchGapAndVolumeSkill(Skill):
+    def __init__(self):
+        super().__init__(name="FetchGapAndVolume", description="Calculates the % gap from previous close and opening volume.")
+        
+    def execute(self, symbol: str) -> Dict[str, Any]:
+        try:
+            ticker = yf.Ticker(symbol)
+            data = ticker.history(period="5d", interval="1d")
+            if len(data) < 2:
+                return {"error": "Not enough data for gap analysis"}
+            
+            prev_close = data['Close'].iloc[-2]
+            today_open = data['Open'].iloc[-1]
+            gap_pct = ((today_open - prev_close) / prev_close) * 100
+            
+            today_vol = data['Volume'].iloc[-1]
+            prev_vol = data['Volume'].iloc[-2]
+            
+            return {
+                "prev_close": round(prev_close, 2),
+                "today_open": round(today_open, 2),
+                "gap_pct": round(gap_pct, 2),
+                "today_volume": today_vol,
+                "prev_volume": prev_vol
+            }
+        except Exception as e:
+            return {"error": f"Failed to fetch gap data: {e}"}
+
+class CalculateVolumeProfileSkill(Skill):
+    def __init__(self):
+        super().__init__(name="CalculateVolumeProfile", description="Calculates the Point of Control (POC) price level.")
+        
+    def execute(self, symbol: str) -> Dict[str, Any]:
+        try:
+            ticker = yf.Ticker(symbol)
+            data = ticker.history(period="1d", interval="5m")
+            if data.empty:
+                return {"error": "No intraday data available"}
+                
+            # Create price bins and sum volume
+            min_price = data['Low'].min()
+            max_price = data['High'].max()
+            bins = np.linspace(min_price, max_price, num=20)
+            
+            # Simple approximation of volume at price
+            data['PriceBin'] = pd.cut(data['Close'], bins)
+            vol_profile = data.groupby('PriceBin')['Volume'].sum()
+            
+            if vol_profile.empty:
+                 return {"error": "Failed to calculate volume profile"}
+                 
+            poc_bin = vol_profile.idxmax()
+            poc_price = poc_bin.mid if pd.notna(poc_bin) else 0.0
+            
+            return {
+                "poc_price": round(float(poc_price), 2),
+                "poc_volume": int(vol_profile.max()),
+                "total_volume": int(data['Volume'].sum())
+            }
+        except Exception as e:
+            return {"error": f"Failed to calculate POC: {e}"}
+
+class FetchUnusualOptionsFlowSkill(Skill):
+    def __init__(self):
+        super().__init__(name="FetchUnusualOptionsFlow", description="Scans options chain for volume exceeding open interest.")
+        
+    def execute(self, symbol: str) -> Dict[str, Any]:
+        try:
+            ticker = yf.Ticker(symbol)
+            expirations = ticker.options
+            if not expirations:
+                return {"error": "No options available"}
+                
+            # Check near-term expiration
+            exp = expirations[0]
+            chain = ticker.option_chain(exp)
+            
+            unusual_calls = []
+            for idx, row in chain.calls.iterrows():
+                vol = row.get('volume', 0)
+                oi = row.get('openInterest', 0)
+                if pd.notna(vol) and pd.notna(oi) and oi > 0 and vol > oi * 2 and vol > 100:
+                    unusual_calls.append({
+                        "strike": row['strike'],
+                        "volume": int(vol),
+                        "open_interest": int(oi),
+                        "type": "CALL"
+                    })
+            
+            unusual_puts = []
+            for idx, row in chain.puts.iterrows():
+                vol = row.get('volume', 0)
+                oi = row.get('openInterest', 0)
+                if pd.notna(vol) and pd.notna(oi) and oi > 0 and vol > oi * 2 and vol > 100:
+                    unusual_puts.append({
+                        "strike": row['strike'],
+                        "volume": int(vol),
+                        "open_interest": int(oi),
+                        "type": "PUT"
+                    })
+                    
+            return {
+                "expiration": exp,
+                "unusual_calls": unusual_calls,
+                "unusual_puts": unusual_puts
+            }
+        except Exception as e:
+            return {"error": f"Failed to fetch unusual options flow: {e}"}
+
+class FetchSectorRotationSkill(Skill):
+    def __init__(self):
+        super().__init__(name="FetchSectorRotation", description="Compares 1-month momentum of Sector ETFs vs SPY.")
+        
+    def execute(self) -> Dict[str, Any]:
+        sectors = {
+            "XLK": "Technology", "XLF": "Financials", "XLV": "Health Care",
+            "XLE": "Energy", "XLY": "Consumer Discr", "XLP": "Consumer Staples",
+            "XLI": "Industrials", "XLC": "Communication", "XLU": "Utilities",
+            "XLRE": "Real Estate", "XLB": "Materials"
+        }
+        try:
+            tickers = list(sectors.keys()) + ["SPY"]
+            data = yf.download(tickers, period="1mo", interval="1d")['Close']
+            
+            returns = {}
+            for t in tickers:
+                if t in data.columns:
+                    first = data[t].dropna().iloc[0]
+                    last = data[t].dropna().iloc[-1]
+                    returns[t] = ((last - first) / first) * 100
+                    
+            spy_return = returns.get("SPY", 0.0)
+            
+            outperforming = []
+            underperforming = []
+            for t, r in returns.items():
+                if t == "SPY": continue
+                if r > spy_return:
+                    outperforming.append({"sector": sectors[t], "etf": t, "return": round(r, 2)})
+                else:
+                    underperforming.append({"sector": sectors[t], "etf": t, "return": round(r, 2)})
+            
+            outperforming.sort(key=lambda x: x["return"], reverse=True)
+            underperforming.sort(key=lambda x: x["return"])
+            
+            return {
+                "spy_return": round(spy_return, 2),
+                "outperforming_sectors": outperforming,
+                "underperforming_sectors": underperforming
+            }
+        except Exception as e:
+            return {"error": f"Failed to fetch sector rotation: {e}"}
+
+class FetchInsiderTradingSkill(Skill):
+    def __init__(self):
+        super().__init__(name="FetchInsiderTrading", description="Pulls recent insider purchases.")
+        
+    def execute(self, symbol: str) -> Dict[str, Any]:
+        try:
+            ticker = yf.Ticker(symbol)
+            purchases = ticker.insider_purchases
+            if purchases is None or (isinstance(purchases, pd.DataFrame) and purchases.empty):
+                return {"recent_purchases": []}
+                
+            if isinstance(purchases, pd.DataFrame):
+                # Clean up and return recent rows
+                p_list = purchases.head(5).to_dict(orient="records")
+                return {"recent_purchases": p_list}
+            else:
+                return {"recent_purchases": purchases}
+        except Exception as e:
+            return {"error": f"Failed to fetch insider trading data: {e}"}
+

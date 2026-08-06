@@ -37,6 +37,9 @@ class TechnicalAnalysisSkill(Skill):
         - 200-day Simple Moving Average (SMA): ${sma_200:.2f}
         - 14-day Average True Range (ATR): ${atr:.2f}
         - Volume Spike Detected: {volume_spike}
+        - Intraday Relative Strength (vs SPY): {intraday_rs}
+        - Pre-Market Gap %: {gap_pct}
+        - Point of Control (POC) Volume Level: ${poc_price}
         {learnings_str}
         Evaluate momentum and trend. If Current Price is above 50-day SMA or 50-day SMA is above 200-day SMA and RSI is between 45 and 70, this represents a healthy uptrend structure: respond with verdict 'BULLISH' and a score between 7.0 and 8.5.
         You must respond in a valid JSON structure:
@@ -58,6 +61,9 @@ class TechnicalAnalysisSkill(Skill):
                 sma_200=data['sma_200'],
                 atr=data['atr'],
                 volume_spike=data['volume_spike'],
+                intraday_rs=data.get('intraday_rs', 'N/A'),
+                gap_pct=data.get('gap_pct', 'N/A'),
+                poc_price=data.get('poc_price', 'N/A'),
                 learnings_str=learnings_str
             )
         except Exception as e:
@@ -776,3 +782,61 @@ Structure your report:
         except Exception as e:
             logger.error(f"Error generating brainstorming report: {e}")
             return "Failed to generate brainstorming report due to internal error."
+
+
+class UnusualOptionsAnalysisSkill(Skill):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="UnusualOptionsAnalysis", description="Evaluates whether unusual options flow is bullish or bearish.")
+        self.llm = llm
+        
+    def execute(self, symbol: str, flow_data: Dict[str, Any], current_price: float) -> Dict[str, Any]:
+        try:
+            calls = flow_data.get("unusual_calls", [])
+            puts = flow_data.get("unusual_puts", [])
+            
+            if not calls and not puts:
+                return {"verdict": "NEUTRAL", "rationale": "No unusual flow detected."}
+                
+            prompt = f"""
+            Analyze the unusual options flow for {symbol} trading at ${current_price}.
+            Unusual Calls: {calls}
+            Unusual Puts: {puts}
+            
+            Determine if the smart money is positioning for a massive upside move (BULLISH) or downside (BEARISH).
+            Respond in raw JSON:
+            {{
+                "verdict": "BULLISH" | "BEARISH" | "NEUTRAL",
+                "rationale": "1 sentence explanation."
+            }}
+            """
+            response_text = self.llm.call(prompt, system_prompt="You are an options order flow expert.", max_tokens=150)
+            clean_text = response_text.replace("```json", "").replace("```", "").strip()
+            return json.loads(clean_text)
+        except Exception as e:
+            return {"verdict": "NEUTRAL", "rationale": f"Failed options analysis: {e}"}
+
+class SwingTradingContextSkill(Skill):
+    def __init__(self, llm: LLMClient):
+        super().__init__(name="SwingTradingContext", description="Evaluates sector rotation and insider buying for swing trades.")
+        self.llm = llm
+        
+    def execute(self, symbol: str, sector_data: Dict[str, Any], insider_data: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            prompt = f"""
+            Analyze the context for a swing trade on {symbol}.
+            Sector Rotation (1mo vs SPY): {sector_data}
+            Insider Trading (Recent Purchases): {insider_data}
+            
+            Determine if the sector is outperforming and if there is insider conviction.
+            Respond in raw JSON:
+            {{
+                "context_score": float (0.0 to 10.0),
+                "rationale": "1 sentence explanation."
+            }}
+            """
+            response_text = self.llm.call(prompt, system_prompt="You are an institutional swing trader.", max_tokens=150)
+            clean_text = response_text.replace("```json", "").replace("```", "").strip()
+            return json.loads(clean_text)
+        except Exception as e:
+            return {"context_score": 5.0, "rationale": f"Failed context analysis: {e}"}
+

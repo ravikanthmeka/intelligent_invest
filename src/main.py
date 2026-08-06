@@ -1017,7 +1017,17 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                             eval_entry["status"] = "Skipped: IV Too High"
                         else:
                             logger.info(f"Candidate {symbol} selected for options... Evaluating Speculative {direction_bias.capitalize()} Option...")
-                            from src.skills.market_data import SelectSpeculativeOptionSkill
+                            from src.skills.market_data import SelectSpeculativeOptionSkill, FetchUnusualOptionsFlowSkill
+                            from src.skills.analysis import UnusualOptionsAnalysisSkill
+                            
+                            try:
+                                flow_data = FetchUnusualOptionsFlowSkill().execute(symbol)
+                                flow_analysis = UnusualOptionsAnalysisSkill(llm_client).execute(symbol, flow_data, cand["close"])
+                                eval_entry["analysis"]["unusual_options_flow"] = flow_analysis
+                                logger.info(f"Unusual options flow for {symbol}: {flow_analysis.get('verdict')} - {flow_analysis.get('rationale')}")
+                            except Exception as e:
+                                logger.warning(f"Failed unusual options flow analysis: {e}")
+                                
                             opt_skill = SelectSpeculativeOptionSkill()
                             opt_data = opt_skill.execute(symbol, cand["close"], bias=direction_bias)
 
