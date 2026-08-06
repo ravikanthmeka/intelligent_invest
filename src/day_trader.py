@@ -73,8 +73,9 @@ async def run_day_trading_cycle(config: Dict[str, Any], dry_run: bool):
         logger.error("Failed to connect to Broker.")
         return
     
-    net_liq = await broker.get_net_liquidation() or state.get("net_liquidation", 100000.0)
-    cash = await broker.get_available_funds() or state.get("cash", 100000.0)
+    portfolio_val = await broker.get_portfolio_value()
+    net_liq = portfolio_val.get("net_liquidation", state.get("net_liquidation", 100000.0))
+    cash = portfolio_val.get("cash", state.get("cash", 100000.0))
     
     # Update State with latest balances
     state["net_liquidation"] = net_liq
