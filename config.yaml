@@ -31,7 +31,7 @@ risk:
   size_by_capital: false  # If true, size positions to fully deploy available cash instead of limiting by risk amount.
   max_vix: 25.0
   dynamic_sizing: true
-
+  min_options_catalyst_score: 5.0
 day_trading:
   enabled: true
   risk_per_trade_pct: 0.01

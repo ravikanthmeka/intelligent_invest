@@ -942,8 +942,11 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                         logger.error(f"Error evaluating Wheel for {symbol}: {e}")
                 
                 ## --- 3b. Speculative Options ---
-                # Retrieve options universe using High Risk tier candidates for momentum
-                options_candidates = scanner.scan_tier("high")
+                # Retrieve options universe using High and Moderate Risk tier candidates for momentum
+                options_candidates = scanner.scan_tier("high") + scanner.scan_tier("moderate")
+                
+                # Fetch threshold from config
+                min_options_catalyst_score = config.get("risk", {}).get("min_options_catalyst_score", 5.0)
                 
                 for cand in options_candidates:
                     symbol = cand["symbol"]
@@ -958,24 +961,39 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                         
                     logger.info(f"Evaluating {symbol} for standalone speculative options...")
                     
+                    eval_entry = {
+                        "symbol": symbol,
+                        "risk_tier": "options",
+                        "timestamp": datetime.now().isoformat(),
+                        "status": "Evaluated for Options",
+                        "analysis": {}
+                    }
+                    
                     # 1. News Catalyst Check
                     news_analysis = news_agent.analyze_news(symbol, learnings_feedback=learnings_feedback)
                     news_score = news_analysis.get("sentiment_score", 5.0)
+                    eval_entry["analysis"]["news_score"] = news_score
                     
-                    if news_score < 6.5:
+                    if news_score < min_options_catalyst_score:
+                        eval_entry["status"] = f"Skipped: News Catalyst too low ({news_score} < {min_options_catalyst_score})"
+                        evaluations.append(eval_entry)
+                        ConsiderationsTracker.log(symbol, "Options", news_score, eval_entry["status"])
                         continue # Needs a strong catalyst
                         
                     # 2. Technical Momentum Check
                     tech_analysis = tech_agent.analyze(symbol, cand, learnings_feedback=learnings_feedback)
                     tech_verd = tech_analysis.get("verdict", "NEUTRAL")
+                    eval_entry["analysis"]["tech_verdict"] = tech_verd
                     
                     # 3. Options Flow Check
                     opt_analysis = options_agent.analyze(symbol)
                     opt_verd = opt_analysis.get("verdict", "NEUTRAL")
+                    eval_entry["analysis"]["opt_verdict"] = opt_verd
                     
                     # 4. Earnings Catalyst Check
                     earnings_analysis = earnings_agent.analyze(symbol)
                     earn_verd = earnings_analysis.get("verdict", "NEUTRAL")
+                    eval_entry["analysis"]["earnings_verdict"] = earn_verd
                     
                     # Determine Bias
                     direction_bias = None
@@ -992,20 +1010,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                         # 5. Volatility Check (crucial for debit strategies)
                         vol_arb_analysis = vol_arb_agent.analyze(symbol, direction_bias=direction_bias.upper())
                         vol_verd = vol_arb_analysis.get("verdict", "FAVORABLE_IV")
-                        
-                        eval_entry = {
-                            "symbol": symbol,
-                            "risk_tier": "options",
-                            "timestamp": datetime.now().isoformat(),
-                            "status": "Evaluated for Options",
-                            "analysis": {
-                                "news_score": news_score,
-                                "tech_verdict": tech_verd,
-                                "opt_verdict": opt_verd,
-                                "earnings_verdict": earn_verd,
-                                "volatility_verdict": vol_verd
-                            }
-                        }
+                        eval_entry["analysis"]["volatility_verdict"] = vol_verd
                         
                         if vol_verd == "IV_TOO_HIGH":
                             logger.info(f"Skipping options for {symbol}: IV is too high for debit strategies.")
@@ -1049,10 +1054,12 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                                             }
                                             state["active_options"] = active_opts
                                             available_opt_cap -= (qty_opts * opt_price * 100)
+                    else:
+                        eval_entry["status"] = "Skipped: No Clear Directional Bias"
                         
-                        evaluations.append(eval_entry)
-                        opt_score = eval_entry.get("analysis", {}).get("opt_score", 5.0)
-                        ConsiderationsTracker.log(symbol, "Options", opt_score, eval_entry["status"])
+                    evaluations.append(eval_entry)
+                    opt_score = eval_entry.get("analysis", {}).get("news_score", 5.0)
+                    ConsiderationsTracker.log(symbol, "Options", opt_score, eval_entry["status"])
 
             # Save state after scans and executions
             state["active_trades"] = active_trades
