@@ -130,7 +130,6 @@ async def run_day_trading_cycle(config: Dict[str, Any], dry_run: bool):
         
     tech_agent = TechnicalAgent(llm)
     news_agent = NewsAgent(llm)
-    considerations = ConsiderationsTracker()
     
     min_tech_score = day_trading_cfg.get("min_technical_score", 6.5)
     async def evaluate_symbol(symbol: str):
@@ -200,19 +199,19 @@ async def run_day_trading_cycle(config: Dict[str, Any], dry_run: bool):
                                             "order_id": order_id
                                         }
                                         save_state(state)
-                                        considerations.add_consideration(symbol, "Day Trade", score, "Trade Executed")
+                                        ConsiderationsTracker.log(symbol, "Day Trade", score, "Trade Executed")
                                 else:
-                                    considerations.add_consideration(symbol, "Day Trade", score, "Trade Executed (Dry Run)")
+                                    ConsiderationsTracker.log(symbol, "Day Trade", score, "Trade Executed (Dry Run)")
                             else:
-                                considerations.add_consideration(symbol, "Day Trade", score, f"Skipped: Insufficient Capital (${capital_req:.2f} > ${cash:.2f})")
+                                ConsiderationsTracker.log(symbol, "Day Trade", score, f"Skipped: Insufficient Capital (${capital_req:.2f} > ${cash:.2f})")
                         else:
-                            considerations.add_consideration(symbol, "Day Trade", score, "Skipped: Calculated Quantity was 0")
+                            ConsiderationsTracker.log(symbol, "Day Trade", score, "Skipped: Calculated Quantity was 0")
                     else:
-                        considerations.add_consideration(symbol, "Day Trade", score, "Skipped: Invalid Risk per Share")
+                        ConsiderationsTracker.log(symbol, "Day Trade", score, "Skipped: Invalid Risk per Share")
                 else:
-                    considerations.add_consideration(symbol, "Day Trade", score, f"Skipped: Technical Score too low ({score} < {required_score})")
+                    ConsiderationsTracker.log(symbol, "Day Trade", score, f"Skipped: Technical Score too low ({score} < {required_score})")
             else:
-                considerations.add_consideration(symbol, "Day Trade", 5.0, f"Skipped: Momentum check failed (Close: {close:.2f} <= MA5: {ma5:.2f})")
+                ConsiderationsTracker.log(symbol, "Day Trade", 5.0, f"Skipped: Momentum check failed (Close: {close:.2f} <= MA5: {ma5:.2f})")
                 
         except Exception as e:
             logger.error(f"Error evaluating {symbol} for day trading: {e}")
