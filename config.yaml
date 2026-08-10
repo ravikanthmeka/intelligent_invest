@@ -7,10 +7,10 @@ trading:
 allocation:
   day_trading_pct: 0.20
   high_risk_pct: 0.20
-  moderate_risk_pct: 0.20
-  low_risk_pct: 0.20
+  moderate_risk_pct: 0.15
+  low_risk_pct: 0.15
   options_pct: 0.20
-  penny_risk_pct: 0.00
+  penny_risk_pct: 0.10
 
 llm:
   provider: "openai"  # Options: "bedrock" or "openai"

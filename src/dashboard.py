@@ -403,23 +403,26 @@ high_deployed = sum(details.get("initial_capital", 0.0) for symbol, details in a
 mod_deployed = sum(details.get("initial_capital", 0.0) for symbol, details in active_trades.items() if details.get("risk_tier", "moderate") == "moderate")
 low_deployed = sum(details.get("initial_capital", 0.0) for symbol, details in active_trades.items() if details.get("risk_tier", "moderate") == "low")
 options_deployed = sum(details.get("initial_capital", 0.0) for symbol, details in active_options.items())
+penny_deployed = sum(details.get("initial_capital", 0.0) for symbol, details in active_trades.items() if details.get("risk_tier", "moderate") == "penny")
 
 # Load allocation percentages
 cfg_alloc = load_config()
-alloc_pcts = cfg_alloc.get("allocation", {"high_risk_pct": 0.25, "moderate_risk_pct": 0.30, "low_risk_pct": 0.20, "options_pct": 0.20})
+alloc_pcts = cfg_alloc.get("allocation", {"high_risk_pct": 0.25, "moderate_risk_pct": 0.30, "low_risk_pct": 0.20, "options_pct": 0.20, "penny_risk_pct": 0.00})
 high_target_pct = alloc_pcts.get("high_risk_pct", 0.25)
 mod_target_pct = alloc_pcts.get("moderate_risk_pct", 0.30)
 low_target_pct = alloc_pcts.get("low_risk_pct", 0.20)
 options_target_pct = alloc_pcts.get("options_pct", 0.20)
+penny_target_pct = alloc_pcts.get("penny_risk_pct", 0.00)
 
 portfolio_total = net_liq
 high_target_cap = portfolio_total * high_target_pct
 mod_target_cap = portfolio_total * mod_target_pct
 low_target_cap = portfolio_total * low_target_pct
 options_target_cap = portfolio_total * options_target_pct
+penny_target_cap = portfolio_total * penny_target_pct
 
 st.write("### Risk Tier & Options Capital Allocation")
-col_tier1, col_tier2, col_tier3, col_tier4 = st.columns(4)
+col_tier1, col_tier2, col_tier3, col_tier4, col_tier5 = st.columns(5)
 with col_tier1:
     st.markdown(f"""
     <div class="kpi-card">
@@ -446,6 +449,13 @@ with col_tier4:
     <div class="kpi-card">
         <div class="kpi-title">🟣 Options (Target: {options_target_pct*100:.0f}%)</div>
         <div class="kpi-val">${options_deployed:,.2f} / ${options_target_cap:,.2f}</div>
+    </div>
+    """, unsafe_allow_html=True)
+with col_tier5:
+    st.markdown(f"""
+    <div class="kpi-card">
+        <div class="kpi-title">🪙 Penny Risk (Target: {penny_target_pct*100:.0f}%)</div>
+        <div class="kpi-val">${penny_deployed:,.2f} / ${penny_target_cap:,.2f}</div>
     </div>
     """, unsafe_allow_html=True)# Helper: compile learnings
 def compile_learnings_feedback(state: Dict[str, Any]) -> str:
@@ -1306,8 +1316,9 @@ with tab4:
             low_pct_val = int(cfg.get("allocation", {}).get("low_risk_pct", 0.20) * 100)
             options_pct_val = int(cfg.get("allocation", {}).get("options_pct", 0.20) * 100)
             day_pct_val = int(cfg.get("allocation", {}).get("day_trading_pct", 0.20) * 100)
+            penny_pct_val = int(cfg.get("allocation", {}).get("penny_risk_pct", 0.00) * 100)
  
-            col_alloc1, col_alloc2, col_alloc3, col_alloc4, col_alloc5 = st.columns(5)
+            col_alloc1, col_alloc2, col_alloc3, col_alloc4, col_alloc5, col_alloc6 = st.columns(6)
             with col_alloc1:
                 high_risk_pct_input = st.slider("High Risk (%)", min_value=0, max_value=100, step=5, value=high_pct_val)
             with col_alloc2:
@@ -1318,8 +1329,10 @@ with tab4:
                 options_pct_input = st.slider("Options (%)", min_value=0, max_value=100, step=5, value=options_pct_val)
             with col_alloc5:
                 day_pct_input = st.slider("Day Trade (%)", min_value=0, max_value=100, step=5, value=day_pct_val)
+            with col_alloc6:
+                penny_pct_input = st.slider("Penny Risk (%)", min_value=0, max_value=100, step=5, value=penny_pct_val)
             
-            total_alloc_sum = high_risk_pct_input + mod_risk_pct_input + low_risk_pct_input + options_pct_input + day_pct_input
+            total_alloc_sum = high_risk_pct_input + mod_risk_pct_input + low_risk_pct_input + options_pct_input + day_pct_input + penny_pct_input
             if total_alloc_sum != 100:
                 st.warning(f"⚠️ Allocations currently sum to **{total_alloc_sum}%**. They MUST sum to exactly 100% to save.")
 
@@ -1414,6 +1427,7 @@ with tab4:
                     cfg["allocation"]["low_risk_pct"] = low_risk_pct_input / 100.0
                     cfg["allocation"]["options_pct"] = options_pct_input / 100.0
                     cfg["allocation"]["day_trading_pct"] = day_pct_input / 100.0
+                    cfg["allocation"]["penny_risk_pct"] = penny_pct_input / 100.0
                     
                     if "scheduler" not in cfg:
                         cfg["scheduler"] = {}
