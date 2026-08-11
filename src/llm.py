@@ -87,6 +87,10 @@ class LLMClient:
         return response.choices[0].message.content.strip()
 
     def _call_bedrock(self, prompt: str, system_prompt: Optional[str], temperature: float, max_tokens: int) -> str:
+        import time
+        import logging
+        logger = logging.getLogger("LLMClient")
+        
         model_id = self.model or "google.gemma-3-12b-it"
 
         # Construct messages parameter
@@ -116,7 +120,24 @@ class LLMClient:
         if system:
             kwargs["system"] = system
 
-        response = self.bedrock_client.converse(**kwargs)
+        max_retries = 8
+        base_delay = 1.0
+        
+        for attempt in range(max_retries):
+            try:
+                response = self.bedrock_client.converse(**kwargs)
+                break
+            except Exception as e:
+                error_str = str(e)
+                if "ThrottlingException" in error_str or "TooManyRequests" in error_str or "429" in error_str:
+                    if attempt == max_retries - 1:
+                        logger.error(f"Max retries reached for Bedrock API. Failing.")
+                        raise e
+                    sleep_time = base_delay * (2 ** attempt)
+                    logger.warning(f"Throttled by Bedrock. Retrying in {sleep_time} seconds... (Attempt {attempt+1}/{max_retries})")
+                    time.sleep(sleep_time)
+                else:
+                    raise e
         
         try:
             usage = response.get("usage", {})
