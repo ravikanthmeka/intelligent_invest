@@ -641,7 +641,15 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                         break
                     
                     logger.info(f"Evaluating candidate {symbol} for '{tier}' risk tier...")
+                    
+                    # Pre-Flight Local Technical Filter (0-token)
+                    close = cand.get("close", 0.0)
+                    sma_200 = cand.get("sma_200", 0.0)
+                    if close > 0 and sma_200 > 0 and close < sma_200:
+                        logger.info(f"Skipping {symbol}: Pre-flight local filter failed (Close {close:.2f} < SMA_200 {sma_200:.2f})")
+                        continue
     
+
                     passed_shield = True
                     reason = None
                     news_score = None
