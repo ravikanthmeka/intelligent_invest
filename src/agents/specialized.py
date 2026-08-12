@@ -284,11 +284,36 @@ class NewsAgent(Agent):
         return shield_skill.execute(symbol, days_range=days_range)
 
     def analyze_news(self, symbol: str, learnings_feedback: str = "") -> Dict[str, Any]:
+        import hashlib
+        import json
+        import os
+        
         fetch_news_skill = self.get_skill("FetchRecentNews")
         news_sentiment_skill = self.get_skill("NewsSentiment")
         
         news_items = fetch_news_skill.execute(symbol)
-        result = news_sentiment_skill.execute(symbol, news_items, learnings_feedback=learnings_feedback)
+        
+        # Hash the news titles to detect changes
+        titles_str = "".join([item.get("title", "") for item in news_items])
+        news_hash = hashlib.md5(titles_str.encode('utf-8')).hexdigest()
+        
+        cache_file = ".data/news_cache.json"
+        cache = {}
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, "r") as f:
+                    cache = json.load(f)
+            except Exception:
+                pass
+                
+        if symbol in cache and cache[symbol].get("hash") == news_hash:
+            result = cache[symbol].get("result")
+        else:
+            result = news_sentiment_skill.execute(symbol, news_items, learnings_feedback=learnings_feedback)
+            cache[symbol] = {"hash": news_hash, "result": result}
+            os.makedirs(".data", exist_ok=True)
+            with open(cache_file, "w") as f:
+                json.dump(cache, f)
         
         NewsTracker.log(symbol, result)
         return result

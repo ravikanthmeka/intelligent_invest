@@ -145,25 +145,24 @@ async def run_day_trading_cycle(config: Dict[str, Any], dry_run: bool):
                 
             close = df["Close"].iloc[-1]
             
-            # --- News Check ---
-            news_enabled = day_trading_cfg.get("news_feed", {}).get("enabled", False)
-            min_sentiment = day_trading_cfg.get("news_feed", {}).get("min_sentiment_score", 8.5)
-            
-            has_catalyst = False
-            if news_enabled:
-                logger.info(f"[{symbol}] Fetching and analyzing news...")
-                news_analysis = await asyncio.to_thread(news_agent.analyze_news, symbol)
-                news_score = news_analysis.get("score", 5.0)
-                if news_score >= min_sentiment:
-                    has_catalyst = True
-                    logger.info(f"[{symbol}] High catalytic news detected (Score: {news_score}). Bypassing momentum check.")
-                        
             # Simple momentum check: is price above 5-period 5m MA?
             ma5 = df["Close"].rolling(5).mean().iloc[-1]
             
-            if has_catalyst or close > ma5:
-                if not has_catalyst:
-                    logger.info(f"[{symbol}] Momentum detected (Close: {close:.2f} > MA5: {ma5:.2f}). Triggering Technical Agent.")
+            if close > ma5:
+                logger.info(f"[{symbol}] Momentum detected (Close: {close:.2f} > MA5: {ma5:.2f}). Triggering analysis.")
+                
+                # --- News Check ---
+                news_enabled = day_trading_cfg.get("news_feed", {}).get("enabled", False)
+                min_sentiment = day_trading_cfg.get("news_feed", {}).get("min_sentiment_score", 8.5)
+                
+                has_catalyst = False
+                if news_enabled:
+                    logger.info(f"[{symbol}] Fetching and analyzing news...")
+                    news_analysis = await asyncio.to_thread(news_agent.analyze_news, symbol)
+                    news_score = news_analysis.get("score", 5.0)
+                    if news_score >= min_sentiment:
+                        has_catalyst = True
+                        logger.info(f"[{symbol}] High catalytic news detected (Score: {news_score}).")
                     
                 # Calculate indicators to populate the data dict properly
                 from src.skills.market_data import CalculateIndicatorsSkill
