@@ -571,7 +571,15 @@ with tab_day:
     st.write("#### Active Day Trades")
     day_active = day_state.get("active_trades", {})
     if day_active:
-        st.dataframe(pd.DataFrame([{**v, "Symbol": k} for k, v in day_active.items()]), use_container_width=True)
+        active_df = pd.DataFrame([{**v, "Symbol": k} for k, v in day_active.items()])
+        active_df = active_df.rename(columns={
+            "entry_price": "Entry Price",
+            "stop_loss_price": "Stop Loss (Exit Price)",
+            "quantity": "Quantity",
+            "initial_capital": "Capital",
+            "purchased_at": "Bought At"
+        })
+        st.dataframe(active_df, use_container_width=True)
         if st.button("🚨 PANIC SELL ALL DAY TRADES"):
             st.warning("Day Trade Liquidation executed.")
     else:

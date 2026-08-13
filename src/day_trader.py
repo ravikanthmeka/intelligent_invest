@@ -83,13 +83,32 @@ async def run_day_trading_cycle(config: Dict[str, Any], dry_run: bool):
     
     active_trades = state.get("active_trades", {})
     
+    # Reconcile active trades with broker positions to detect stop-loss hits
+    positions = await broker.get_positions()
+    position_symbols = {p["symbol"] for p in positions if p.get("shares", 0) > 0}
+    
+    for symbol, data in list(active_trades.items()):
+        if not dry_run and symbol not in position_symbols:
+            logger.info(f"Position for {symbol} not found in broker. Assuming Stop Loss triggered intraday.")
+            state["completed_trades"].append({
+                "symbol": symbol,
+                "bought_at": data.get("purchased_at", "Unknown"),
+                "sold_at": now_est.isoformat(),
+                "buy_price": data.get("entry_price", "Unknown"),
+                "sell_price": data.get("stop_loss_price", "Unknown"),
+                "reason": "Stop Loss Triggered"
+            })
+            del active_trades[symbol]
+            
+    save_state(state)
+    
     # EOD Liquidation Check
     if now_est.time() >= eod_time:
         logger.info(f"Time is {now_est.time()} >= {eod_time}. Enforcing EOD Liquidation.")
         for symbol, data in list(active_trades.items()):
             logger.info(f"Liquidating {symbol} EOD.")
             if not dry_run:
-                await broker.execute_sell(symbol, data["quantity"])
+                await broker.execute_sell_all(symbol)
             state["completed_trades"].append({
                 "symbol": symbol,
                 "bought_at": data.get("purchased_at", "Unknown"),
