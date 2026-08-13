@@ -80,7 +80,7 @@ class TechnicalAnalysisSkill(Skill):
             )
             
         try:
-            response_text = self.llm.call(prompt, system_prompt=system_prompt, max_tokens=100)
+            response_text = self.llm.call(prompt, system_prompt=system_prompt, max_tokens=1000)
             clean_text = response_text.replace("```json", "").replace("```", "").strip()
             return json.loads(clean_text)
         except Exception as e:
@@ -160,7 +160,7 @@ class FundamentalAnalysisSkill(Skill):
                     learnings_str=learnings_str
                 )
                 
-            response_text = self.llm.call(prompt, system_prompt=system_prompt, max_tokens=100)
+            response_text = self.llm.call(prompt, system_prompt=system_prompt, max_tokens=1000)
             clean_text = response_text.replace("```json", "").replace("```", "").strip()
             return json.loads(clean_text)
         except Exception as e:
@@ -222,7 +222,7 @@ class NewsSentimentSkill(Skill):
                     learnings_str=learnings_str
                 )
                 
-            response_text = self.llm.call(prompt, system_prompt=system_prompt, max_tokens=100)
+            response_text = self.llm.call(prompt, system_prompt=system_prompt, max_tokens=1000)
             clean_text = response_text.replace("```json", "").replace("```", "").strip()
             return json.loads(clean_text)
         except Exception as e:
@@ -329,7 +329,7 @@ class GrowthRnDEvaluationSkill(Skill):
                     learnings_str=learnings_str
                 )
                 
-            response_text = self.llm.call(prompt, system_prompt=system_prompt, max_tokens=100)
+            response_text = self.llm.call(prompt, system_prompt=system_prompt, max_tokens=1000)
             clean_text = response_text.replace("```json", "").replace("```", "").strip()
             res = json.loads(clean_text)
             
@@ -379,7 +379,7 @@ class MacroEconomicAnalysisSkill(Skill):
         Do not add any markup or markdown wraps besides the raw JSON.
         """
         try:
-            response_text = self.llm.call(prompt, system_prompt="You are a global macro strategist.", max_tokens=100)
+            response_text = self.llm.call(prompt, system_prompt="You are a global macro strategist.", max_tokens=1000)
             clean_text = response_text.replace("```json", "").replace("```", "").strip()
             return json.loads(clean_text)
         except Exception as e:
@@ -408,7 +408,7 @@ class GlobalSectorRotationSkill(Skill):
         Do not add any markup or markdown wraps besides the raw JSON.
         """
         try:
-            response_text = self.llm.call(prompt, system_prompt="You are a sector rotation analyst.", max_tokens=100)
+            response_text = self.llm.call(prompt, system_prompt="You are a sector rotation analyst.", max_tokens=1000)
             clean_text = response_text.replace("```json", "").replace("```", "").strip()
             return json.loads(clean_text)
         except Exception as e:
@@ -439,7 +439,7 @@ class QualitativeAnalysisSkill(Skill):
         Do not add any markup or markdown wraps besides the raw JSON.
         """
         try:
-            response_text = self.llm.call(prompt, system_prompt="You are an equity research analyst.", max_tokens=100)
+            response_text = self.llm.call(prompt, system_prompt="You are an equity research analyst.", max_tokens=1000)
             clean_text = response_text.replace("```json", "").replace("```", "").strip()
             return json.loads(clean_text)
         except Exception as e:
@@ -473,7 +473,7 @@ class HistoricalAnalogSkill(Skill):
         Do not add any markup or markdown wraps besides the raw JSON.
         """
         try:
-            response_text = self.llm.call(prompt, system_prompt="You are a quantitative market historian.", max_tokens=100)
+            response_text = self.llm.call(prompt, system_prompt="You are a quantitative market historian.", max_tokens=1000)
             clean_text = response_text.replace("```json", "").replace("```", "").strip()
             return json.loads(clean_text)
         except Exception as e:
@@ -565,7 +565,7 @@ class RetailSentimentAnalysisSkill(Skill):
         }}"""
         
         try:
-            res = self.llm.call(prompt, system_prompt="You are a retail sentiment tracker.", max_tokens=100)
+            res = self.llm.call(prompt, system_prompt="You are a retail sentiment tracker.", max_tokens=1000)
             return json.loads(res.replace("```json", "").replace("```", "").strip())
         except:
             # Fallback algorithmic
@@ -718,7 +718,7 @@ Respond strictly in JSON:
 }}
 """
         try:
-            res = self.llm.call(prompt, system_prompt="You extract exact M&A deal terms from news text.", max_tokens=100)
+            res = self.llm.call(prompt, system_prompt="You extract exact M&A deal terms from news text.", max_tokens=1000)
             data = json.loads(res.replace("```json", "").replace("```", "").strip())
             
             # Additional validation
@@ -777,7 +777,7 @@ Structure your report:
 2. ...
 """
         try:
-            res = self.llm.call(prompt, system_prompt="You are a brilliant macro trading strategist.", max_tokens=100)
+            res = self.llm.call(prompt, system_prompt="You are a brilliant macro trading strategist.", max_tokens=1000)
             return res.strip()
         except Exception as e:
             logger.error(f"Error generating brainstorming report: {e}")
