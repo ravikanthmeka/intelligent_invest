@@ -92,7 +92,10 @@ async def run_day_trading_cycle(config: Dict[str, Any], dry_run: bool):
                 await broker.execute_sell(symbol, data["quantity"])
             state["completed_trades"].append({
                 "symbol": symbol,
-                "exit_time": now_est.isoformat(),
+                "bought_at": data.get("purchased_at", "Unknown"),
+                "sold_at": now_est.isoformat(),
+                "buy_price": data.get("entry_price", "Unknown"),
+                "sell_price": "Market",
                 "reason": "EOD Liquidation"
             })
             del active_trades[symbol]

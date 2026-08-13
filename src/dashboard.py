@@ -577,6 +577,32 @@ with tab_day:
     else:
         st.info("No active day trades currently.")
 
+    st.write("#### Day Trade Logs (Completed)")
+    day_completed = day_state.get("completed_trades", [])
+    if day_completed:
+        day_completed_df = pd.DataFrame(day_completed)
+        if "sold_at" in day_completed_df.columns:
+            day_completed_df = day_completed_df.sort_values(by="sold_at", ascending=False)
+        elif "exit_time" in day_completed_df.columns:
+            day_completed_df = day_completed_df.sort_values(by="exit_time", ascending=False)
+            
+        # Rename columns to be more human readable
+        rename_cols = {
+            "symbol": "Symbol",
+            "bought_at": "Bought At",
+            "sold_at": "Sold At",
+            "exit_time": "Sold At",
+            "buy_price": "Buy Price",
+            "sell_price": "Sell Price",
+            "reason": "Reason to Sell"
+        }
+        day_completed_df = day_completed_df.rename(columns=rename_cols)
+        
+        st.dataframe(day_completed_df, use_container_width=True)
+    else:
+        st.info("No completed day trades currently.")
+
+
 with tab_considerations:
     st.write("### 🤔 Evaluated Trades (Considerations Log)")
     st.markdown("This tab shows all evaluated symbols across options, day trading, and swing trading that were considered. It tracks their scores and reasons why they were rejected (or if they passed).")
