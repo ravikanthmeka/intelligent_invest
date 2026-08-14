@@ -7,7 +7,7 @@ commands = [
     "cd /opt/intelligent_invest",
     "git reset --hard",
     "git pull origin main",
-    "echo '*/10 * * * * cd /opt/intelligent_invest && /opt/intelligent_invest/.venv/bin/python src/momentum_trader.py >> /var/log/intelligent_invest_day_trading.log 2>&1' > mycron",
+    "echo '*/20 * * * * cd /opt/intelligent_invest && /opt/intelligent_invest/.venv/bin/python src/momentum_trader.py >> /var/log/intelligent_invest_day_trading.log 2>&1' > mycron",
     "crontab mycron"
 ]
 
