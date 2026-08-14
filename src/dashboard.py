@@ -571,14 +571,42 @@ with tab_day:
     st.write("#### Active Momentum Trades")
     day_active = day_state.get("active_trades", {})
     if day_active:
-        active_df = pd.DataFrame([{**v, "Symbol": k} for k, v in day_active.items()])
-        active_df = active_df.rename(columns={
-            "entry_price": "Entry Price",
-            "stop_loss_price": "Stop Loss (Exit Price)",
-            "quantity": "Quantity",
-            "initial_capital": "Capital",
-            "purchased_at": "Bought At"
-        })
+        momentum_list = []
+        for sym, details in day_active.items():
+            entry_price = details.get("entry_price", 0.0)
+            stop_loss = details.get("stop_loss_price", 0.0)
+            qty = details.get("quantity", 0)
+            capital = details.get("initial_capital", qty * entry_price)
+            bought_at = details.get("purchased_at", "Unknown")
+            
+            # Fetch live price
+            curr_price = entry_price
+            try:
+                import yfinance as yf
+                hist = yf.Ticker(sym).history(period="1d")
+                if not hist.empty:
+                    curr_price = hist["Close"].iloc[-1]
+            except Exception:
+                pass
+                
+            market_val = qty * curr_price
+            pnl = market_val - capital
+            pnl_pct = (pnl / capital * 100) if capital > 0 else 0.0
+            
+            momentum_list.append({
+                "Symbol": sym,
+                "Shares": qty,
+                "Bought At": bought_at,
+                "Entry Price": f"${entry_price:.2f}",
+                "Current Price": f"${curr_price:.2f}",
+                "Stop Loss (Exit)": f"${stop_loss:.2f}",
+                "Capital": f"${capital:,.2f}",
+                "Market Value": f"${market_val:,.2f}",
+                "P&L ($)": f"${pnl:,.2f}",
+                "Return (%)": f"{pnl_pct:+.2f}%"
+            })
+            
+        active_df = pd.DataFrame(momentum_list)
         st.dataframe(active_df, use_container_width=True)
         if st.button("🚨 PANIC SELL ALL MOMENTUM TRADES"):
             st.warning("Momentum Trade Liquidation executed.")
