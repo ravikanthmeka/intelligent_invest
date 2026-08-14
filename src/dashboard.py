@@ -568,7 +568,7 @@ with tab_day:
             
     st.metric("Day Trading Capital Allocated", f"${day_state.get('net_liquidation', 0) * cfg.get('allocation', {}).get('day_trading_pct', 0.20):,.2f}")
     
-    st.write("#### Active Day Trades")
+    st.write("#### Active Momentum Trades")
     day_active = day_state.get("active_trades", {})
     if day_active:
         active_df = pd.DataFrame([{**v, "Symbol": k} for k, v in day_active.items()])
@@ -580,12 +580,12 @@ with tab_day:
             "purchased_at": "Bought At"
         })
         st.dataframe(active_df, use_container_width=True)
-        if st.button("🚨 PANIC SELL ALL DAY TRADES"):
-            st.warning("Day Trade Liquidation executed.")
+        if st.button("🚨 PANIC SELL ALL MOMENTUM TRADES"):
+            st.warning("Momentum Trade Liquidation executed.")
     else:
         st.info("No active day trades currently.")
 
-    st.write("#### Day Trade Logs (Completed)")
+    st.write("#### Momentum Trade Logs (Completed)")
     day_completed = day_state.get("completed_trades", [])
     if day_completed:
         day_completed_df = pd.DataFrame(day_completed)

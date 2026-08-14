@@ -22,12 +22,12 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("day_trading.log")
+        logging.FileHandler("momentum_trading.log")
     ]
 )
-logger = logging.getLogger("DayTrader")
+logger = logging.getLogger("MomentumTrader")
 
-STATE_FILE = "day_trading_state.json"
+STATE_FILE = "momentum_trading_state.json"
 
 def load_state() -> Dict[str, Any]:
     if os.path.exists(STATE_FILE):
@@ -45,11 +45,11 @@ def save_state(state: Dict[str, Any]):
     except Exception as e:
         logger.error(f"Error writing state file: {e}")
 
-async def run_day_trading_cycle(config: Dict[str, Any], dry_run: bool):
-    logger.info("=== Starting Day Trading Cycle ===")
+async def run_momentum_trading_cycle(config: Dict[str, Any], dry_run: bool):
+    logger.info("=== Starting Momentum Trading Cycle ===")
     state = load_state()
     
-    day_trading_cfg = config.get("day_trading", {})
+    day_trading_cfg = config.get("momentum_trading", {})
     if not day_trading_cfg.get("enabled", False):
         logger.info("Day trading is disabled in config.")
         return
@@ -102,26 +102,6 @@ async def run_day_trading_cycle(config: Dict[str, Any], dry_run: bool):
             
     save_state(state)
     
-    # EOD Liquidation Check
-    if now_est.time() >= eod_time:
-        logger.info(f"Time is {now_est.time()} >= {eod_time}. Enforcing EOD Liquidation.")
-        for symbol, data in list(active_trades.items()):
-            logger.info(f"Liquidating {symbol} EOD.")
-            if not dry_run:
-                await broker.execute_sell_all(symbol)
-            state["completed_trades"].append({
-                "symbol": symbol,
-                "bought_at": data.get("purchased_at", "Unknown"),
-                "sold_at": now_est.isoformat(),
-                "buy_price": data.get("entry_price", "Unknown"),
-                "sell_price": "Market",
-                "reason": "EOD Liquidation"
-            })
-            del active_trades[symbol]
-        save_state(state)
-        await broker.disconnect()
-        return
-
     # Intraday scanning logic (simplified for speed)
     llm = LLMClient(
         provider=config.get("llm", {}).get("provider"),
@@ -139,10 +119,10 @@ async def run_day_trading_cycle(config: Dict[str, Any], dry_run: bool):
     except Exception as e:
         logger.error(f"Error fetching VIX: {e}")
         
-    day_trading_pct = config.get("allocation", {}).get("day_trading_pct", 0.20)
-    available_day_cap = net_liq * day_trading_pct
+    momentum_trading_pct = config.get("allocation", {}).get("momentum_trading_pct", 0.20)
+    available_day_cap = net_liq * momentum_trading_pct
     
-    logger.info(f"Available Day Trading Capital: ${available_day_cap:.2f}")
+    logger.info(f"Available Momentum Trading Capital: ${available_day_cap:.2f}")
 
     # For day trading, just scan watchlist directly for rapid 5m breakouts
     watchlist = config.get("watchlist", [])
@@ -241,15 +221,79 @@ async def run_day_trading_cycle(config: Dict[str, Any], dry_run: bool):
                                 else:
                                     ConsiderationsTracker.log(symbol, "Day Trade", score, "Trade Executed (Dry Run)")
                             else:
-                                ConsiderationsTracker.log(symbol, "Day Trade", score, f"Skipped: Insufficient Capital (${capital_req:.2f} > ${cash:.2f})")
+                                # Position swapping logic
+                                if len(active_trades) > 0:
+                                    lowest_score = 999.0
+                                    weakest_symbol = None
+                                    
+                                    for act_sym in list(active_trades.keys()):
+                                        act_df = await broker.get_historical_data(act_sym, duration="1 D", bar_size="5 mins")
+                                        if act_df.empty or len(act_df) < 5: continue
+                                        act_close = act_df["Close"].iloc[-1]
+                                        act_df_calc = calc_skill.execute(act_df)
+                                        act_last = act_df_calc.iloc[-1]
+                                        act_avg_vol = act_df_calc['Volume'].rolling(20).mean().iloc[-1] if len(act_df_calc) >= 20 else act_last['Volume']
+                                        
+                                        act_data = {
+                                            "history": act_df_calc,
+                                            "close": act_close,
+                                            "rsi": act_last.get("RSI", 50.0),
+                                            "sma_50": act_last.get("SMA_50", act_close),
+                                            "sma_200": act_last.get("SMA_200", act_close),
+                                            "atr": act_last.get("ATR", 0.0),
+                                            "volume": act_last.get("Volume", 0),
+                                            "avg_volume": act_avg_vol,
+                                            "volume_spike": act_last.get("Volume", 0) > (act_avg_vol * 1.2)
+                                        }
+                                        act_analysis = await asyncio.to_thread(tech_agent.analyze, act_sym, act_data, "", "day")
+                                        act_score = act_analysis.get("score", 5.0)
+                                        
+                                        if act_score < lowest_score:
+                                            lowest_score = act_score
+                                            weakest_symbol = act_sym
+                                            
+                                    if weakest_symbol and score >= lowest_score + 1.0:
+                                        logger.info(f"Swapping {weakest_symbol} (score {lowest_score}) for {symbol} (score {score})")
+                                        if not dry_run:
+                                            await broker.execute_sell_all(weakest_symbol)
+                                            cash += active_trades[weakest_symbol]["initial_capital"] # Approximate cash freed
+                                            
+                                            # Now buy the new symbol if we have enough cash
+                                            if capital_req <= cash:
+                                                order_id = await broker.execute_buy(symbol, qty, stop_loss)
+                                                if order_id:
+                                                    active_trades[symbol] = {
+                                                        "entry_price": close,
+                                                        "stop_loss_price": stop_loss,
+                                                        "quantity": qty,
+                                                        "initial_capital": capital_req,
+                                                        "purchased_at": now_est.isoformat(),
+                                                        "order_id": order_id
+                                                    }
+                                                    
+                                            state["completed_trades"].append({
+                                                "symbol": weakest_symbol,
+                                                "bought_at": active_trades[weakest_symbol].get("purchased_at", "Unknown"),
+                                                "sold_at": now_est.isoformat(),
+                                                "buy_price": active_trades[weakest_symbol].get("entry_price", "Unknown"),
+                                                "sell_price": "Market",
+                                                "reason": "Swapped for better setup"
+                                            })
+                                            del active_trades[weakest_symbol]
+                                            save_state(state)
+                                            ConsiderationsTracker.log(symbol, "Momentum Trade", score, f"Swapped out {weakest_symbol}")
+                                    else:
+                                        ConsiderationsTracker.log(symbol, "Momentum Trade", score, f"Skipped: Score {score} not high enough to swap {weakest_symbol} ({lowest_score})")
+                                else:
+                                    ConsiderationsTracker.log(symbol, "Momentum Trade", score, f"Skipped: Insufficient Capital (${capital_req:.2f} > ${cash:.2f})")
                         else:
-                            ConsiderationsTracker.log(symbol, "Day Trade", score, "Skipped: Calculated Quantity was 0")
+                            ConsiderationsTracker.log(symbol, "Momentum Trade", score, "Skipped: Calculated Quantity was 0")
                     else:
-                        ConsiderationsTracker.log(symbol, "Day Trade", score, "Skipped: Invalid Risk per Share")
+                        ConsiderationsTracker.log(symbol, "Momentum Trade", score, "Skipped: Invalid Risk per Share")
                 else:
-                    ConsiderationsTracker.log(symbol, "Day Trade", score, f"Skipped: Technical Score too low ({score} < {required_score})")
+                    ConsiderationsTracker.log(symbol, "Momentum Trade", score, f"Skipped: Technical Score too low ({score} < {required_score})")
             else:
-                ConsiderationsTracker.log(symbol, "Day Trade", 5.0, f"Skipped: Momentum check failed (Close: {close:.2f} <= MA5: {ma5:.2f})")
+                ConsiderationsTracker.log(symbol, "Momentum Trade", 5.0, f"Skipped: Momentum check failed (Close: {close:.2f} <= MA5: {ma5:.2f})")
                 
         except Exception as e:
             logger.error(f"Error evaluating {symbol} for day trading: {e}")
@@ -271,4 +315,4 @@ if __name__ == "__main__":
         cfg = yaml.safe_load(f)
     
     dry = cfg.get("trading", {}).get("dry_run", False)
-    asyncio.run(run_day_trading_cycle(cfg, dry))
+    asyncio.run(run_momentum_trading_cycle(cfg, dry))

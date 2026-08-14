@@ -1,0 +1,30 @@
+[Unit]
+Description=Run Day Trader every 10 minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=10min
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
+---
+[Unit]
+Description=Run Intelligent Invest Trading Cycle every 30 minutes during trading hours
+
+[Timer]
+OnCalendar=Mon-Fri *-*-* 09:30:00 America/New_York
+OnCalendar=Mon-Fri *-*-* 10,11,12,13,14,15:00,30:00 America/New_York
+OnCalendar=Mon-Fri *-*-* 16:00:00 America/New_York
+Unit=trading-agent.service
+
+[Install]
+WantedBy=timers.target
+---
+ trading-agent.timer - Run Intelligent Invest Trading Cycle every 30 minutes during trading hours
+     Loaded: loaded (/etc/systemd/system/trading-agent.timer; enabled; preset: disabled)
+     Active: active (waiting) since Wed 2026-08-05 14:15:49 UTC; 6 days ago
+    Trigger: Wed 2026-08-12 14:00:00 UTC; 22min left
+   Triggers:  trading-agent.service
+
+Aug 05 14:15:49 ip-10-0-1-242.ec2.internal systemd[1]: Started trading-agent.timer - Run Intelligent Invest Trading Cycle every 30 minutes during trading hours.

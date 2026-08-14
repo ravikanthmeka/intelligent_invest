@@ -1,0 +1,42 @@
+[
+    {
+        "timestamp": "2026-08-05T12:52:04.467401",
+        "provider": "openai",
+        "model": "gpt-4o",
+        "prompt_tokens": 100,
+        "completion_tokens": 20,
+        "total_tokens": 120
+    },
+    {
+        "timestamp": "2026-08-05T12:52:04.469433",
+        "provider": "bedrock",
+        "model": "google.gemma-3-12b-it",
+        "prompt_tokens": 150,
+        "completion_tokens": 30,
+        "total_tokens": 180
+    },
+    {
+        "timestamp": "2026-08-11T12:44:20.371657",
+        "provider": "bedrock",
+        "model": "google.gemma-3-12b-it",
+        "prompt_tokens": 11,
+        "completion_tokens": 21,
+        "total_tokens": 32
+    },
+    {
+        "timestamp": "2026-08-11T13:11:34.420797",
+        "provider": "bedrock",
+        "model": "google.gemma-3-12b-it",
+        "prompt_tokens": 11,
+        "completion_tokens": 21,
+        "total_tokens": 32
+    },
+    {
+        "timestamp": "2026-08-11T13:35:22.745639",
+        "provider": "bedrock",
+        "model": "google.gemma-3-12b-it",
+        "prompt_tokens": 11,
+        "completion_tokens": 21,
+        "total_tokens": 32
+    }
+]

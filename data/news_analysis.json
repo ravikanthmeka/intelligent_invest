@@ -1,0 +1,13 @@
+[
+    {
+        "timestamp": "2026-08-05T11:10:45.469869",
+        "symbol": "AAPL",
+        "sentiment_score": 0.8,
+        "sentiment_label": "Bullish",
+        "summary": "Strong earnings and growth.",
+        "key_events": [
+            "Earnings Beat",
+            "New Product Launch"
+        ]
+    }
+]

@@ -586,9 +586,10 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                 
                 # Check if we still have portfolio slots
                 active_positions_count = len(active_trades)
+                opportunity_hunt_mode = False
                 if active_positions_count >= max_positions:
-                    logger.info("Portfolio reached max position limit. Stopping scan.")
-                    break
+                    logger.info("Portfolio at max capacity. Entering Opportunity Hunt mode (only swapping for +1.0 score candidates).")
+                    opportunity_hunt_mode = True
                 
                 slots_available = max_positions - active_positions_count
                 
@@ -599,7 +600,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                                         if details.get("risk_tier", "moderate") == tier)
                 available_tier_cap = target_tier_cap - deployed_tier_cap
                 
-                if available_tier_cap <= 0:
+                if available_tier_cap <= 0 and not opportunity_hunt_mode:
                     logger.info(f"No available capital for '{tier}' risk tier (Target: ${target_tier_cap:,.2f}, Deployed: ${deployed_tier_cap:,.2f}). Skipping.")
                     continue
                 
@@ -637,19 +638,11 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                         logger.info(f"Skipping {symbol}: Traded recently (cooldown active).")
                         continue
                     
-                    if slots_available <= 0:
+                    if slots_available <= 0 and not opportunity_hunt_mode:
                         break
                     
                     logger.info(f"Evaluating candidate {symbol} for '{tier}' risk tier...")
-                    
-                    # Pre-Flight Local Technical Filter (0-token)
-                    close = cand.get("close", 0.0)
-                    sma_200 = cand.get("sma_200", 0.0)
-                    if close > 0 and sma_200 > 0 and close < sma_200:
-                        logger.info(f"Skipping {symbol}: Pre-flight local filter failed (Close {close:.2f} < SMA_200 {sma_200:.2f})")
-                        continue
     
-
                     passed_shield = True
                     reason = None
                     news_score = None
@@ -828,6 +821,69 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                     
                     if status != "Passed":
                         continue
+                        
+                    # --- OPPORTUNITY HUNT SWAP LOGIC ---
+                    if opportunity_hunt_mode:
+                        # Find the weakest active trade (lowest unrealized_pnl_pct) in this tier
+                        weakest_symbol = None
+                        lowest_return = float('inf')
+                        weakest_trade_info = None
+                        
+                        # Use broker_stock_positions to get accurate return
+                        for p in broker_stock_positions:
+                            sym = p["symbol"]
+                            if sym in active_trades and active_trades[sym].get("risk_tier", "moderate") == tier:
+                                ret = p.get("unrealized_pnl_pct", 0.0)
+                                if ret < lowest_return:
+                                    lowest_return = ret
+                                    weakest_symbol = sym
+                                    weakest_trade_info = active_trades[sym]
+                        
+                        if not weakest_symbol:
+                            logger.info(f"Opportunity Hunt: Could not find an active trade in tier '{tier}' to swap. Passing.")
+                            continue
+                            
+                        # Calculate original scores for the weakest link
+                        w_analysis = weakest_trade_info.get("analysis", {})
+                        w_scores = [w_analysis.get(k) for k in ["news_score", "tech_score", "fund_score", "growth_score"] if w_analysis.get(k) is not None]
+                        w_confidence = sum(w_scores) / len(w_scores) if w_scores else 5.0
+                        
+                        # Compare against candidate
+                        if confidence_score >= (w_confidence + 1.0):
+                            logger.info(f"Opportunity Hunt Triggered! Candidate {symbol} ({confidence_score:.2f}) is > 1.0 better than weakest link {weakest_symbol} ({w_confidence:.2f}, ret: {lowest_return*100:.2f}%). Swapping!")
+                            
+                            # Execute Swap Liquidate
+                            success = await broker.execute_sell_all(weakest_symbol)
+                            if success:
+                                # Archive the trade
+                                completed_trade = {
+                                    "symbol": weakest_symbol,
+                                    "risk_tier": weakest_trade_info.get("risk_tier", "moderate"),
+                                    "quantity": weakest_trade_info.get("quantity", 0),
+                                    "entry_price": weakest_trade_info.get("entry_price", 1.0),
+                                    "exit_price": 1.0, # Just a placeholder since we don't have fill price instantly
+                                    "initial_capital": weakest_trade_info.get("initial_capital", 0.0),
+                                    "purchased_at": weakest_trade_info.get("purchased_at", ""),
+                                    "sold_at": datetime.now().isoformat(),
+                                    "realized_pnl": lowest_return * weakest_trade_info.get("initial_capital", 0.0), # Approximate
+                                    "return_pct": lowest_return,
+                                    "exit_reason": f"Opportunity Cost: Swapped for superior candidate {symbol}",
+                                    "analysis": w_analysis
+                                }
+                                if "completed_trades" not in state:
+                                    state["completed_trades"] = []
+                                state["completed_trades"].append(completed_trade)
+                                
+                                # Add the freed capital to the available tier capital
+                                available_tier_cap += weakest_trade_info.get("initial_capital", 0.0)
+                                slots_available += 1
+                                del active_trades[weakest_symbol]
+                            else:
+                                logger.error(f"Failed to sell {weakest_symbol} during opportunity swap. Skipping {symbol}.")
+                                continue
+                        else:
+                            logger.info(f"Opportunity Hunt: Candidate {symbol} ({confidence_score:.2f}) not sufficiently better than weakest link {weakest_symbol} ({w_confidence:.2f}). No swap.")
+                            continue
     
                     # E. Position Sizing & Entry Execution
                     min_sl_val = 0.10 if tier == "penny" else None
