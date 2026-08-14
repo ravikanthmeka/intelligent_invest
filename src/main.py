@@ -1086,7 +1086,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                             
                             try:
                                 flow_data = FetchUnusualOptionsFlowSkill().execute(symbol)
-                                flow_analysis = UnusualOptionsAnalysisSkill(llm_client).execute(symbol, flow_data, cand["close"])
+                                flow_analysis = UnusualOptionsAnalysisSkill(llm).execute(symbol, flow_data, cand["close"])
                                 eval_entry["analysis"]["unusual_options_flow"] = flow_analysis
                                 logger.info(f"Unusual options flow for {symbol}: {flow_analysis.get('verdict')} - {flow_analysis.get('rationale')}")
                             except Exception as e:
@@ -1099,9 +1099,15 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                                 eval_entry["analysis"]["considered_options"] = opt_data.get("considered_options", [])
                                 opt_price = opt_data.get("ask", 0) or opt_data.get("lastPrice", 0)
                                 if opt_price > 0:
-                                    # Risk max 25% of options cap per trade or $2000, whichever is smaller
-                                    trade_cap = min(available_opt_cap * 0.25, 2000.0)
-                                    qty_opts = int(trade_cap / (opt_price * 100))
+                                    # Risk max 35% of options cap per trade or $3000, whichever is smaller, to allow for more expensive options
+                                    trade_cap = min(available_opt_cap * 0.35, 3000.0)
+                                    contract_cost = opt_price * 100
+                                    qty_opts = int(trade_cap / contract_cost)
+                                    
+                                    # If 0 but we have enough available cap to buy at least 1, just buy 1
+                                    if qty_opts == 0 and available_opt_cap >= contract_cost:
+                                        qty_opts = 1
+                                        
                                     if qty_opts > 0:
                                         logger.info(f"Executing Speculative {direction_bias.capitalize()} Option for {symbol}: {qty_opts} contracts of {opt_data['expiration']} ${opt_data['strike']} at ~${opt_price}")
                                         opt_order_id = await broker.execute_option_buy(
