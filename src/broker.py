@@ -152,7 +152,7 @@ class BrokerAgent:
 
     async def execute_option_buy(self, symbol: str, expiration: str, strike: float, right: str, quantity: int) -> Optional[str]:
         """
-        Executes a Buy order for a specific Option contract.
+        Executes a Buy order for a specific Option contract and waits for fill.
         expiration format: YYYY-MM-DD, e.g., '2023-10-20' -> ib_insync uses 'YYYYMMDD'
         """
         if self.dry_run:
@@ -160,11 +160,9 @@ class BrokerAgent:
             return "dry-run-opt-order-id-123"
 
         try:
+            import asyncio
             # IB requires YYYYMMDD
             ib_exp = expiration.replace("-", "")
-            contract = Option(symbol, ib_exp, strike, right, "SMART", tradingClass=symbol)
-            # Some options don't use the symbol as tradingClass, but qualifyContracts will fix it usually, or we can omit it.
-            # Safe basic contract:
             contract = Option(symbol, ib_exp, strike, right, "SMART", multiplier="100", currency="USD")
             await self.ib.qualifyContractsAsync(contract)
 
@@ -172,21 +170,38 @@ class BrokerAgent:
             order = MarketOrder("BUY", quantity)
             trade = self.ib.placeOrder(contract, order)
             
-            logger.info(f"Placed Option Buy for {symbol} {ib_exp} {strike}{right}: OrderId {trade.order.orderId}")
-            return str(trade.order.orderId)
+            logger.info(f"Placed Option Buy for {symbol} {ib_exp} {strike}{right}: OrderId {trade.order.orderId}. Waiting for fill...")
+            
+            # Wait up to 10 seconds for fill
+            for _ in range(20):
+                if trade.isDone() or trade.orderStatus.status == "Filled":
+                    break
+                await asyncio.sleep(0.5)
+
+            if trade.orderStatus.status == "Filled":
+                logger.info(f"Option Buy Filled for {symbol} {ib_exp} {strike}{right}")
+                return str(trade.order.orderId)
+            elif trade.orderStatus.status in ("Cancelled", "Inactive", "ApiCancelled"):
+                logger.warning(f"Option Buy for {symbol} rejected/cancelled by broker. Status: {trade.orderStatus.status}")
+                return None
+            else:
+                logger.warning(f"Option Buy for {symbol} did not fill in time. Status: {trade.orderStatus.status}. Cancelling...")
+                self.ib.cancelOrder(order)
+                return None
         except Exception as e:
             logger.error(f"Error executing option buy order for {symbol}: {e}")
             return None
 
     async def execute_option_sell(self, symbol: str, expiration: str, strike: float, right: str, quantity: int) -> Optional[str]:
         """
-        Executes a Market Sell to Open (or Sell to Close) order for an option contract.
+        Executes a Market Sell to Open (or Sell to Close) order for an option contract and waits for fill.
         """
         if self.dry_run:
             logger.info(f"[DRY RUN] Option Sell Order Executed: SELL {quantity} contracts of {symbol} {expiration} {strike}{right}")
             return "dry_run_opt_sell_id"
 
         try:
+            import asyncio
             ib_exp = expiration.replace("-", "")
             contract = Option(symbol, ib_exp, strike, right, "SMART", multiplier="100", currency="USD")
             await self.ib.qualifyContractsAsync(contract)
@@ -195,8 +210,23 @@ class BrokerAgent:
             order = MarketOrder("SELL", quantity)
             trade = self.ib.placeOrder(contract, order)
             
-            logger.info(f"Placed Option Sell for {symbol} {ib_exp} {strike}{right}: OrderId {trade.order.orderId}")
-            return str(trade.order.orderId)
+            logger.info(f"Placed Option Sell for {symbol} {ib_exp} {strike}{right}: OrderId {trade.order.orderId}. Waiting for fill...")
+            
+            for _ in range(20):
+                if trade.isDone() or trade.orderStatus.status == "Filled":
+                    break
+                await asyncio.sleep(0.5)
+                
+            if trade.orderStatus.status == "Filled":
+                logger.info(f"Option Sell Filled for {symbol} {ib_exp} {strike}{right}")
+                return str(trade.order.orderId)
+            elif trade.orderStatus.status in ("Cancelled", "Inactive", "ApiCancelled"):
+                logger.warning(f"Option Sell for {symbol} rejected/cancelled by broker. Status: {trade.orderStatus.status}")
+                return None
+            else:
+                logger.warning(f"Option Sell for {symbol} did not fill in time. Status: {trade.orderStatus.status}. Cancelling...")
+                self.ib.cancelOrder(order)
+                return None
         except Exception as e:
             logger.error(f"Error executing option sell order for {symbol}: {e}")
             return None

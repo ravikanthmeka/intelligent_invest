@@ -1134,6 +1134,9 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                                             }
                                             state["active_options"] = active_opts
                                             available_opt_cap -= (qty_opts * opt_price * 100)
+                                        else:
+                                            eval_entry["status"] = "Failed to Execute / Rejected by Broker"
+                                            logger.warning(f"Skipping adding {symbol} to active options because broker execution failed.")
                     else:
                         eval_entry["status"] = "Skipped: No Clear Directional Bias"
                         
