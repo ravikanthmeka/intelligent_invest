@@ -523,15 +523,22 @@ with tab_options:
     considered_opts_list = []
     for eval_item in state.get("candidate_evaluations", []):
         analysis = eval_item.get("analysis", {})
+        status = eval_item.get("status", "Evaluated")
         if "considered_options" in analysis and analysis["considered_options"]:
+            flow_analysis = analysis.get("unusual_options_flow", {})
+            flow_verdict = flow_analysis.get("verdict", "N/A")
+            flow_rationale = flow_analysis.get("rationale", "")
+            
             for opt in analysis["considered_options"]:
                 considered_opts_list.append({
                     "Symbol": eval_item.get("symbol", ""),
                     "Strike": f"${opt.get('strike', 0):.2f}",
                     "Last Price": f"${opt.get('lastPrice', 0):.2f}",
-                    "Ask": f"${opt.get('ask', 0):.2f}",
                     "Volume": opt.get("volume", 0),
-                    "Tech Verdict": analysis.get("tech_verdict", "UNKNOWN")
+                    "Tech Verdict": analysis.get("tech_verdict", "UNKNOWN"),
+                    "Flow Verdict": flow_verdict,
+                    "Status/Reason": status,
+                    "Rationale": flow_rationale
                 })
     if considered_opts_list:
         st.dataframe(pd.DataFrame(considered_opts_list), use_container_width=True)
