@@ -6,10 +6,10 @@ trading:
 
 allocation:
   day_trading_pct: 0.20
-  high_risk_pct: 0.20
+  high_risk_pct: 0.10
   moderate_risk_pct: 0.15
   low_risk_pct: 0.15
-  options_pct: 0.20
+  options_pct: 0.05
   penny_risk_pct: 0.10
 
 llm:
@@ -22,18 +22,18 @@ broker:
   client_id: 88
 
 risk:
-  max_positions: 5
+  max_positions: 15
   max_capital_pct: 0.35  # Max 35% of capital in a single stock
   risk_per_trade_pct: 0.04  # Risk 4% of portfolio on any one trade
   min_stop_loss_pct: 0.05  # Minimum 5% stop loss distance
   max_stop_loss_pct: 0.07  # Maximum 7% stop loss distance
   trail_trigger_pct: 0.03  # Return threshold to activate trailing stop/take profit
-  size_by_capital: false  # If true, size positions to fully deploy available cash instead of limiting by risk amount.
+  size_by_capital: true  # If true, size positions to fully deploy available cash instead of limiting by risk amount.
   max_vix: 25.0
   dynamic_sizing: true
   min_options_catalyst_score: 5.0
 day_trading:
-  enabled: true
+  enabled: false
   risk_per_trade_pct: 0.01
   min_stop_loss_pct: 0.01
   max_stop_loss_pct: 0.02
@@ -45,6 +45,8 @@ day_trading:
     min_sentiment_score: 8.5
   
 watchlist:
+  - "SH"
+  - "GLD"
   - "AAPL"
   - "MSFT"
   - "NVDA"
@@ -86,12 +88,12 @@ scheduler:
   execution_windows: ["09:30-16:00"]
 
 rules:
-  min_technical_score: 5.0
-  min_fundamental_score: 5.0
-  min_news_score: 5.0
+  min_technical_score: 7.0
+  min_fundamental_score: 7.0
+  min_news_score: 7.0
   min_qualitative_score: 6.0
   min_historical_score: 6.0
-  min_options_score: 5.0
+  min_options_score: 7.0
   min_insider_score: 5.0
   max_correlation_threshold: 0.75
   min_dividend_yield: 0.02

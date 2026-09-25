@@ -8,6 +8,7 @@ from src.agents.base import Agent
 from src.skills.market_data import CalculateIndicatorsSkill, FetchEarningsCalendarSkill, FetchRecentNewsSkill, FetchMacroDataSkill, FetchSectorETFDataSkill, FetchQualitativeDataSkill, FetchOptionsChainSkill, FetchInsiderTradingSkill, FetchDividendDataSkill, CalculateCorrelationSkill, FetchIVRankSkill, FetchEarningsCatalystDataSkill
 from src.skills.analysis import TechnicalAnalysisSkill, FundamentalAnalysisSkill, NewsSentimentSkill, GrowthRnDEvaluationSkill, MacroEconomicAnalysisSkill, GlobalSectorRotationSkill, QualitativeAnalysisSkill, HistoricalAnalogSkill, OptionsFlowAnalysisSkill, InsiderTradingAnalysisSkill, RetailSentimentAnalysisSkill, DividendIncomeAnalysisSkill, PortfolioCorrelationSkill, VolatilityArbitrageSkill, EarningsCatalystSkill, PortfolioHedgingSkill
 from src.skills.risk_management import CalculatePositionSizeSkill, EvaluateActivePositionSkill
+from src.graph_rag.graph_tool import TemporalGraphSkill
 
 logger = logging.getLogger("SpecializedAgents")
 
@@ -244,6 +245,7 @@ class FundamentalAgent(Agent):
         super().__init__(name="FundamentalAgent", role="Analyze and score company balance sheets and fundamentals.")
         self.llm = llm
         self.register_skill(FundamentalAnalysisSkill(llm))
+        self.register_skill(TemporalGraphSkill())
 
     def analyze(self, symbol: str, learnings_feedback: str = "", include_context: bool = True) -> Dict[str, Any]:
         fund_skill = self.get_skill("FundamentalAnalysis")
@@ -268,6 +270,45 @@ class FundamentalAgent(Agent):
             except Exception as e:
                 import logging
                 logging.getLogger("FundamentalAgent").error(f"Failed fetching context data for {symbol}: {e}")
+                
+            try:
+                graph_skill = self.get_skill("query_temporal_market_graph")
+                if graph_skill:
+                    from datetime import datetime, timedelta
+                    import json
+                    start_date = (datetime.now() - timedelta(days=5*365)).strftime('%Y-%m-%d')
+                    end_date = datetime.now().strftime('%Y-%m-%d')
+                    graph_data = graph_skill.execute(symbol, start_date, end_date)
+                    
+                    graph_dict = json.loads(graph_data)
+                    if graph_dict.get("data"):
+                        prompt = f"""
+                        Analyze the historical temporal correlation data for {symbol}:
+                        {graph_dict['data']}
+                        
+                        Based on these historical relationships, how well does this stock align with past highly profitable market topologies?
+                        If the historical relationship structure indicates a very strong buy, output a boost_score up to 1.5. 
+                        
+                        Respond strictly in JSON:
+                        {{
+                            "analysis": "brief rationale",
+                            "boost_score": 1.2
+                        }}
+                        """
+                        llm_res = self.llm.call(prompt, max_tokens=300)
+                        
+                        # Parse JSON
+                        import re
+                        json_match = re.search(r'\{.*\}', llm_res.replace('\n', ''))
+                        if json_match:
+                            llm_json = json.loads(json_match.group(0))
+                            boost = float(llm_json.get("boost_score", 0.0))
+                            if boost > 0:
+                                result["score"] = min(10.0, result.get("score", 5.0) + boost)
+                                result["rationale"] += f" (Temporal Graph Analysis Boost: +{boost} - {llm_json.get('analysis', '')})"
+            except Exception as e:
+                import logging
+                logging.getLogger("FundamentalAgent").error(f"Failed temporal graph analysis for {symbol}: {e}")
                 
         return result
 

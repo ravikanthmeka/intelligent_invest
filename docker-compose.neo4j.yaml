@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  neo4j:
+    image: neo4j:5.23.0
+    container_name: intelligent-invest-neo4j
+    ports:
+      - "7474:7474" # HTTP UI
+      - "7687:7687" # Bolt port
+    environment:
+      - NEO4J_AUTH=neo4j/invest1234
+      # Enable APOC plugin for temporal and advanced graph functions
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+    volumes:
+      - ./data/neo4j/data:/data
+      - ./data/neo4j/logs:/logs
+      - ./data/neo4j/import:/var/lib/neo4j/import
+      - ./data/neo4j/plugins:/plugins
+    restart: unless-stopped

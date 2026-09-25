@@ -187,7 +187,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
     if not connected:
         logger.error("Failed to connect to Broker. Aborting cycle.")
         return
-
+    from datetime import datetime
     try:
         # 2.5 Macro & Sector Rotation Analysis
         logger.info("Evaluating Macroeconomic Risk Posture...")
@@ -951,7 +951,7 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                 
                 ## --- 3a. Options Wheel Strategy ---
                 wheel_portfolio = state.get("wheel_portfolio", {})
-                watchlist = config.get("watchlist", [])
+                watchlist = [] # Temporarily disable Wheel strategy per user request (was config.get("watchlist", []))
                 
                 for symbol in watchlist:
                     if available_opt_cap <= 200:
@@ -1080,6 +1080,33 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                             logger.info(f"Skipping options for {symbol}: IV is too high for debit strategies.")
                             eval_entry["status"] = "Skipped: IV Too High"
                         else:
+                            # --- TEMPORARY SAFEGUARD ---
+                            # Disable speculative options until further notice
+                            DISABLE_SPECULATIVE_OPTIONS = True
+                            if DISABLE_SPECULATIVE_OPTIONS:
+                                logger.info(f"Skipping speculative option for {symbol}: Speculative options flow is temporarily disabled.")
+                                eval_entry["status"] = "Skipped: Flow Disabled"
+                                continue
+
+                            # Check if we already hold an option for this symbol
+                            already_held = False
+                            for t_key, t_val in active_trades.items():
+                                if t_val.get("symbol") == symbol and t_val.get("asset_class") == "option":
+                                    already_held = True
+                                    break
+                            
+                            # Fallback check against actual broker positions
+                            if not already_held:
+                                for p in await broker.get_positions():
+                                    if p["symbol"] == symbol and p["contract"].secType == "OPT":
+                                        already_held = True
+                                        break
+                                        
+                            if already_held:
+                                logger.info(f"Skipping speculative option for {symbol}: We already hold an active option position for this ticker.")
+                                eval_entry["status"] = "Skipped: Max 1 Option Per Symbol"
+                                continue
+
                             logger.info(f"Candidate {symbol} selected for options... Evaluating Speculative {direction_bias.capitalize()} Option...")
                             from src.skills.market_data import SelectSpeculativeOptionSkill, FetchUnusualOptionsFlowSkill
                             from src.skills.analysis import UnusualOptionsAnalysisSkill
@@ -1098,6 +1125,34 @@ async def run_trading_cycle(config: Dict[str, Any], dry_run: bool):
                             if opt_data and "expiration" in opt_data:
                                 eval_entry["analysis"]["considered_options"] = opt_data.get("considered_options", [])
                                 opt_price = opt_data.get("ask", 0) or opt_data.get("lastPrice", 0)
+                                
+                                # --- Monte Carlo Options Evaluator ---
+                                # if opt_price > 0:
+                                #     try:
+                                #         from src.skills.monte_carlo import MonteCarloOptionEvaluatorSkill
+                                #         from datetime import datetime
+                                #         exp_date = datetime.strptime(opt_data["expiration"], "%Y-%m-%d")
+                                #         dte = max(1, (exp_date - datetime.now()).days)
+                                #         
+                                #         mc_eval = MonteCarloOptionEvaluatorSkill().execute(
+                                #             symbol=symbol,
+                                #             current_price=cand["close"],
+                                #             strike=opt_data["strike"],
+                                #             days_to_expiry=dte,
+                                #             right=opt_data["right"],
+                                #             opt_price=opt_price
+                                #         )
+                                #         
+                                #         eval_entry["analysis"]["monte_carlo"] = mc_eval
+                                #         logger.info(f"Monte Carlo for {symbol}: POP={mc_eval.get('pop', 0):.1%}, EV=${mc_eval.get('ev', 0):.2f}")
+                                #         
+                                #         if mc_eval.get("ev", 0) < 0:
+                                #             logger.info(f"Skipping option for {symbol}: Monte Carlo Expected Value is negative (${mc_eval.get('ev', 0):.2f}).")
+                                #             eval_entry["status"] = "Skipped: Negative EV (Monte Carlo)"
+                                #             opt_price = 0 # Prevent execution
+                                #     except Exception as e:
+                                #         logger.warning(f"Failed Monte Carlo evaluation: {e}")
+
                                 if opt_price > 0:
                                     # Risk max 35% of options cap per trade or $3000, whichever is smaller, to allow for more expensive options
                                     trade_cap = min(available_opt_cap * 0.35, 3000.0)

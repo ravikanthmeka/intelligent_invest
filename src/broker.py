@@ -292,17 +292,39 @@ class BrokerAgent:
                 logger.warning(f"No position found for {symbol} to liquidate.")
                 return False
 
+            # Wait to ensure we fetch all open orders from previous sessions
+            self.ib.reqAllOpenOrders()
+            import asyncio
+            await asyncio.sleep(1) # Give IB time to sync existing open orders
+            
             # Cancel open orders for this contract first (e.g. existing stop loss)
-            for trade in self.ib.openTrades():
-                if trade.contract.symbol == symbol:
-                    self.ib.cancelOrder(trade.order)
-                    logger.info(f"Cancelled open order {trade.order.orderId} for {symbol}")
+            for t in self.ib.openTrades():
+                if t.contract.symbol == symbol:
+                    if t.order.action == "SELL" and t.order.orderType == "MKT":
+                        logger.info(f"Skipping sell for {symbol}: Found existing open MKT SELL order {t.order.orderId}")
+                        return True
+                    else:
+                        self.ib.cancelOrder(t.order)
+                        logger.info(f"Cancelled open order {t.order.orderId} for {symbol}")
 
             # Execute market sell
             sell_order = MarketOrder("SELL", shares)
             trade = self.ib.placeOrder(contract, sell_order)
-            logger.info(f"Executed Market Sell for {shares} shares of {symbol}")
-            return True
+            
+            # Wait for fill
+            max_wait = 30
+            elapsed = 0
+            while not trade.isDone() and elapsed < max_wait:
+                await asyncio.sleep(1)
+                elapsed += 1
+                
+            if trade.orderStatus.status == "Filled":
+                logger.info(f"Executed Market Sell for {shares} shares of {symbol}")
+                return True
+            else:
+                logger.warning(f"Failed to fill Market Sell for {symbol} within {max_wait} seconds. Status: {trade.orderStatus.status}")
+                self.ib.cancelOrder(sell_order)
+                return False
         except Exception as e:
             logger.error(f"Error executing sell for {symbol}: {e}")
             return False
