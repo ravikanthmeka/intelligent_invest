@@ -14,9 +14,10 @@ yum install -y docker git python3-pip python3-devel
 systemctl enable docker
 systemctl start docker
 
-# Add ssm agent (usually pre-installed on Amazon Linux 2023, but make sure it is running)
-systemctl enable amazon-ssm-agent
-systemctl start amazon-ssm-agent
+# Add ssm agent
+yum install -y amazon-ssm-agent
+systemctl enable amazon-ssm-agent || true
+systemctl start amazon-ssm-agent || true
 
 # Install Docker Compose (v2)
 mkdir -p /usr/local/lib/docker/cli-plugins/
