@@ -3,25 +3,19 @@ import base64
 import time
 
 # Read files
-with open('src/main.py', 'rb') as f:
-    main_b64 = base64.b64encode(f.read()).decode('utf-8')
-with open('src/skills/monte_carlo.py', 'rb') as f:
-    mc_b64 = base64.b64encode(f.read()).decode('utf-8')
+with open('src/agents/specialized.py', 'rb') as f:
+    spec_b64 = base64.b64encode(f.read()).decode('utf-8')
 
 ssm = boto3.client('ssm', region_name='us-east-1')
 
 script = f'''
-python -c "
+python3 -c "
 import base64
 
-with open('/opt/intelligent_invest/src/main.py', 'wb') as f:
-    f.write(base64.b64decode('{main_b64}'))
-
-with open('/opt/intelligent_invest/src/skills/monte_carlo.py', 'wb') as f:
-    f.write(base64.b64decode('{mc_b64}'))
+with open('/opt/intelligent_invest/src/agents/specialized.py', 'wb') as f:
+    f.write(base64.b64decode('{spec_b64}'))
 "
-chown ubuntu:ubuntu /opt/intelligent_invest/src/main.py
-chown ubuntu:ubuntu /opt/intelligent_invest/src/skills/monte_carlo.py
+chown ubuntu:ubuntu /opt/intelligent_invest/src/agents/specialized.py
 systemctl restart trading-agent.service
 '''
 

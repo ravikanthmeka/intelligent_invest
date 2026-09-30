@@ -82,6 +82,21 @@ watchlist:
   - "INDY"
   - "EPI"
   - "PIN"
+  - "SPY"
+  - "QQQ"
+  - "JPM"
+  - "DIS"
+  - "V"
+  - "XLF"
+  - "XLK"
+  - "XLV"
+  - "XLE"
+  - "XLY"
+  - "XLP"
+  - "XLI"
+  - "XLU"
+  - "XLB"
+  - "XLRE"
 
 scheduler:
   interval_minutes: 30
@@ -89,8 +104,8 @@ scheduler:
 
 rules:
   min_technical_score: 7.0
-  min_fundamental_score: 7.0
-  min_news_score: 7.0
+  min_fundamental_score: 5.0
+  min_news_score: 5.0
   min_qualitative_score: 6.0
   min_historical_score: 6.0
   min_options_score: 7.0

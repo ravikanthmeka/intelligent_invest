@@ -24,40 +24,84 @@ class MarketScannerAgent(Agent):
         self.register_skill(CalculateIndicatorsSkill())
 
     def _fetch_sp500_tickers(self) -> List[str]:
+        import os, time, json
+        cache_file = ".data/sp500_tickers.json"
+        if os.path.exists(cache_file) and time.time() - os.path.getmtime(cache_file) < 86400:
+            try:
+                with open(cache_file, "r") as f:
+                    return json.load(f)
+            except Exception: pass
         try:
             import urllib.request
             url = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/master/data/constituents.csv"
             res = urllib.request.urlopen(url, timeout=5).read().decode('utf-8')
             lines = res.split('\n')
             tickers = [line.split(',')[0].strip().upper() for line in lines[1:] if line]
-            # Replace dot with hyphen for Yahoo Finance compatibility (e.g. BRK.B to BRK-B)
-            cleaned = []
-            for t in tickers:
-                t_clean = t.replace(".", "-")
-                if t_clean:
-                    cleaned.append(t_clean)
+            cleaned = [t.replace(".", "-") for t in tickers if t.replace(".", "-")]
+            os.makedirs(".data", exist_ok=True)
+            with open(cache_file, "w") as f:
+                json.dump(cleaned, f)
             return cleaned
         except Exception as e:
             logger.error(f"Error fetching S&P 500 tickers: {e}")
             return []
 
     def _fetch_nasdaq_tickers(self) -> List[str]:
+        import os, time, json
+        cache_file = ".data/nasdaq_tickers.json"
+        if os.path.exists(cache_file) and time.time() - os.path.getmtime(cache_file) < 86400:
+            try:
+                with open(cache_file, "r") as f:
+                    return json.load(f)
+            except Exception: pass
         try:
             import urllib.request
             url = "https://raw.githubusercontent.com/datasets/nasdaq-listings/master/data/nasdaq-listed.csv"
             res = urllib.request.urlopen(url, timeout=5).read().decode('utf-8')
             lines = res.split('\n')
             tickers = [line.split(',')[0].strip().upper() for line in lines[1:] if line]
-            # Replace dot with hyphen for Yahoo Finance compatibility
-            cleaned = []
-            for t in tickers:
-                t_clean = t.replace(".", "-")
-                if t_clean:
-                    cleaned.append(t_clean)
+            cleaned = [t.replace(".", "-") for t in tickers if t.replace(".", "-")]
+            os.makedirs(".data", exist_ok=True)
+            with open(cache_file, "w") as f:
+                json.dump(cleaned, f)
             return cleaned
         except Exception as e:
             logger.error(f"Error fetching Nasdaq tickers: {e}")
             return []
+            
+    def _get_history(self, symbol: str) -> pd.DataFrame:
+        import os, time, pandas as pd
+        cache_dir = ".data/history"
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_file = f"{cache_dir}/{symbol}_1y.csv"
+        
+        if os.path.exists(cache_file) and time.time() - os.path.getmtime(cache_file) < 86400:
+            try:
+                df_hist = pd.read_csv(cache_file, index_col="Date", parse_dates=True)
+                df_recent = yf.Ticker(symbol).history(period="5d", interval="1d")
+                if not df_recent.empty:
+                    # ensure index timezone info matches
+                    if df_hist.index.tz is None and df_recent.index.tz is not None:
+                        df_recent.index = df_recent.index.tz_localize(None)
+                    elif df_hist.index.tz is not None and df_recent.index.tz is None:
+                        df_hist.index = df_hist.index.tz_localize(None)
+                        
+                    df_combined = pd.concat([df_hist, df_recent])
+                    df_combined = df_combined[~df_combined.index.duplicated(keep='last')]
+                    df_combined.sort_index(inplace=True)
+                    return df_combined
+                return df_hist
+            except Exception: pass
+            
+        df = yf.Ticker(symbol).history(period="1y", interval="1d")
+        try:
+            if not df.empty:
+                df_to_save = df.copy()
+                if df_to_save.index.tz is not None:
+                    df_to_save.index = df_to_save.index.tz_localize(None)
+                df_to_save.to_csv(cache_file)
+        except Exception: pass
+        return df
 
     def scan(self) -> List[Dict[str, Any]]:
         return self.scan_tier("moderate")
@@ -166,8 +210,7 @@ class MarketScannerAgent(Agent):
         
         for symbol in tickers:
             try:
-                ticker_obj = yf.Ticker(symbol)
-                df = ticker_obj.history(period="1y", interval="1d")
+                df = self._get_history(symbol)
                 if len(df) < 50:
                     continue
                 

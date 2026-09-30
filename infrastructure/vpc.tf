@@ -44,3 +44,22 @@ resource "aws_route_table_association" "public_association" {
   subnet_id      = aws_subnet.public_subnet.id
   route_table_id = aws_route_table.public_rt.id
 }
+
+resource "aws_security_group_rule" "bedrock_endpoint_ingress" {
+  type              = "ingress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  cidr_blocks       = [var.vpc_cidr]
+  security_group_id = aws_security_group.trading_sg.id
+}
+
+resource "aws_vpc_endpoint" "bedrock_runtime" {
+  vpc_id              = aws_vpc.trading_vpc.id
+  service_name        = "com.amazonaws.${var.aws_region}.bedrock-runtime"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = [aws_subnet.public_subnet.id]
+  security_group_ids  = [aws_security_group.trading_sg.id]
+  private_dns_enabled = true
+}
+
